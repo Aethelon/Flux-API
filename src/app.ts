@@ -15,6 +15,7 @@ import type { Database } from "./database/types.js"
 import { registerErrorHandler } from "./shared/errors/error-handler.js"
 import { healthRoutes } from "./modules/health/routes.js"
 import { registerAuthModule } from "./modules/auth/register.js"
+import { registerCatalogModule } from "./modules/catalog/register.js"
 
 interface BuildAppOptions {
   config?: AppConfig
@@ -83,6 +84,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   registerErrorHandler(app)
   registerAuthModule(app)
+  registerCatalogModule(app)
   void app.register(healthRoutes, { prefix: "/api/v1/health" })
 
   return app

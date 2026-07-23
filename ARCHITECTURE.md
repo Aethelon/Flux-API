@@ -193,7 +193,7 @@ Assignment history must use validity intervals instead of overwriting the previo
 
 - `categories`: tenant category hierarchy and state.
 - `units`: tenant unit code, label, divisibility, and quantity scale.
-- `products`: SKU, barcode, type (`finished_product`, `packaging`, or `service`), name, description, category, unit, state, minimum stock, and current selling price.
+- `products`: SKU, barcode, type (`raw_material`, `finished_product`, `packaging`, or `service`), name, description, category, unit, state, minimum stock, and current selling price.
 - `product_price_history`: product, old/new price, effective time, actor, and reason.
 - `product_cost_history`: product, cost, source, effective time, actor, and reason.
 - `suppliers`: supplier identity and contact fields.
