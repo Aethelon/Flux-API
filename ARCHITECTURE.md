@@ -77,7 +77,7 @@ Do not split these modules into microservices in the first version. A single tra
 - TypeScript on an active Node.js LTS release.
 - Fastify for the HTTP server.
 - PostgreSQL as the primary and analytical database for the first version.
-- A typed PostgreSQL query layer and versioned SQL migrations.
+- Kysely as the typed PostgreSQL query layer with versioned migrations.
 - JSON Schema validation shared by requests, responses, OpenAPI, and structured AI outputs where applicable.
 - OpenAPI documentation generated from route schemas.
 - A PostgreSQL transactional outbox and database-backed worker queue initially.
@@ -132,7 +132,7 @@ HTTP handlers call application services. Application services enforce authorizat
 
 ### 5.1 Authentication
 
-- Store passwords only as modern adaptive password hashes. Never log or audit password values.
+- Store passwords only as versioned Node.js `scrypt` hashes with random salts. Never log or audit password values.
 - Use short-lived signed access tokens and rotating refresh tokens.
 - Store refresh-token hashes, device/session metadata, creation time, expiration time, and revocation time.
 - Revoke the previous refresh token during rotation. Reuse of a revoked token revokes the token family.

@@ -1,0 +1,118 @@
+import type { FastifyPluginCallbackTypebox } from "@fastify/type-provider-typebox"
+import { Type } from "@sinclair/typebox"
+import { ErrorResponseSchema } from "../../shared/http/schemas.js"
+import {
+  AuthTokensSchema,
+  LoginBodySchema,
+  PublicUserSchema,
+  RefreshBodySchema,
+} from "./schemas.js"
+
+function userAgent(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value.join(", ")
+  return value ?? null
+}
+
+export const authRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
+  app.post(
+    "/login",
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "1 minute",
+        },
+      },
+      schema: {
+        tags: ["Authentication"],
+        body: LoginBodySchema,
+        response: {
+          200: AuthTokensSchema,
+          400: ErrorResponseSchema,
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    async (request) => app.authService.login(request.body, {
+      ipAddress: request.ip,
+      userAgent: userAgent(request.headers["user-agent"]),
+      requestId: request.id,
+    }),
+  )
+
+  app.post(
+    "/refresh",
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+        },
+      },
+      schema: {
+        tags: ["Authentication"],
+        body: RefreshBodySchema,
+        response: {
+          200: AuthTokensSchema,
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    async (request) => app.authService.refresh(request.body.refreshToken, {
+      ipAddress: request.ip,
+      userAgent: userAgent(request.headers["user-agent"]),
+      requestId: request.id,
+    }),
+  )
+
+  app.get(
+    "/me",
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ["Authentication"],
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: PublicUserSchema,
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    (request) => {
+      const user = request.auth
+      if (!user) throw new Error("Authentication hook did not set request.auth")
+
+      return {
+        id: user.id,
+        tenantId: user.tenantId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      }
+    },
+  )
+
+  app.post(
+    "/logout",
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ["Authentication"],
+        security: [{ bearerAuth: [] }],
+        response: {
+          204: Type.Null(),
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const user = request.auth
+      if (!user) throw new Error("Authentication hook did not set request.auth")
+
+      await app.authService.logout(user, request.id)
+      return reply.status(204).send(null)
+    },
+  )
+
+  done()
+}
