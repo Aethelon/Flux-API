@@ -157,4 +157,21 @@ void describe("catalog business rules", () => {
       },
     )
   })
+
+  void it("does not change a stock-managed product into a service", async () => {
+    const service = new CatalogService(repository({
+      getProduct: () => Promise.resolve(product),
+    }))
+
+    await assert.rejects(
+      service.updateProduct(user, product.id, {
+        version: product.version,
+        type: "service",
+      }),
+      {
+        statusCode: 409,
+        code: "PRODUCT_INVENTORY_TYPE_IMMUTABLE",
+      },
+    )
+  })
 })

@@ -321,6 +321,16 @@ export class CatalogService {
       categoryId: input.categoryId ?? current.categoryId,
       unitId: input.unitId ?? current.unitId,
     }
+    if (
+      merged.type !== current.type
+      && (merged.type === "service" || current.type === "service")
+    ) {
+      throw new AppError(
+        409,
+        "PRODUCT_INVENTORY_TYPE_IMMUTABLE",
+        "A product cannot be changed between service and stock-managed types.",
+      )
+    }
     const values = await this.prepareProductWrite(user, merged, current)
     const priceChanged = current.priceCents !== values.priceCents
     const costChanged = current.costCents !== values.costCents

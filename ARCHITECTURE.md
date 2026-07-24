@@ -379,9 +379,12 @@ The operation is idempotent. A failed step rolls back every step.
 ### 8.4 Receive or adjust inventory
 
 - A receipt appends stock movements and updates product cost history when an accepted cost changes.
+- Initial stock is posted as a positive adjustment, never written directly into the current balance.
+- Receipts and positive adjustments require an accepted unit-cost snapshot. Negative adjustments use the current moving-average cost snapshot.
 - A manual adjustment requires a reason and permission.
 - A stock count posts only the difference between expected and counted values after confirmation.
 - Every movement records its source document and the balance resulting from the movement.
+- Products cannot change between service and stock-managed types after creation because that would invalidate their inventory-history semantics.
 
 ## 9. HTTP API design
 

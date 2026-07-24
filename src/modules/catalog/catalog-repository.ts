@@ -688,6 +688,16 @@ export class KyselyCatalogRepository implements CatalogRepository {
         }).execute()
       }
 
+      if (values.type !== "service") {
+        await transaction.insertInto("inventory_balances").values({
+          tenant_id: user.tenantId,
+          product_id: row.id,
+          on_hand: 0,
+          reserved: 0,
+          average_unit_cost_cents: null,
+        }).execute()
+      }
+
       await insertAudit(transaction, user, "product.created", "product", row.id, null, values)
       await insertOutbox(transaction, user.tenantId, "product.created", row.id, values)
       return row.id

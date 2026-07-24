@@ -7,6 +7,16 @@ type JsonValue = ColumnType<unknown, unknown, unknown>
 
 export type UserRole = "admin" | "funcionario"
 export type ProductType = "raw_material" | "finished_product" | "packaging" | "service"
+export type StockMovementType =
+  | "receipt"
+  | "sale"
+  | "sale_reversal"
+  | "return"
+  | "reservation"
+  | "reservation_release"
+  | "positive_adjustment"
+  | "negative_adjustment"
+  | "stock_count_adjustment"
 
 export interface TenantTable {
   id: Generated<string>
@@ -180,6 +190,43 @@ export interface ProductCostHistoryTable {
   effective_at: GeneratedTimestamp
 }
 
+export interface InventoryBalanceTable {
+  tenant_id: string
+  product_id: string
+  on_hand: ColumnType<string, number | string, number | string>
+  reserved: ColumnType<string, number | string, number | string>
+  average_unit_cost_cents: ColumnType<
+    string | null,
+    number | string | null,
+    number | string | null
+  >
+  version: Generated<number>
+  updated_at: GeneratedTimestamp
+}
+
+export interface StockMovementTable {
+  id: Generated<string>
+  tenant_id: string
+  product_id: string
+  movement_type: StockMovementType
+  quantity: ColumnType<string, number | string, never>
+  resulting_on_hand: ColumnType<string, number | string, never>
+  resulting_reserved: ColumnType<string, number | string, never>
+  unit_cost_snapshot_cents: ColumnType<
+    string | null,
+    number | string | null,
+    never
+  >
+  source_type: string
+  source_id: string | null
+  source_reference: string | null
+  reason: string
+  actor_user_id: string
+  occurred_at: GeneratedTimestamp
+  reversal_of_id: string | null
+  created_at: GeneratedTimestamp
+}
+
 export interface Database {
   tenants: TenantTable
   tenant_settings: TenantSettingsTable
@@ -193,4 +240,6 @@ export interface Database {
   products: ProductTable
   product_price_history: ProductPriceHistoryTable
   product_cost_history: ProductCostHistoryTable
+  inventory_balances: InventoryBalanceTable
+  stock_movements: StockMovementTable
 }
