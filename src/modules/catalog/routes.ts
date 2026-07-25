@@ -8,6 +8,7 @@ import {
   CreateCategoryBodySchema,
   CreateProductBodySchema,
   CreateUnitBodySchema,
+  IdempotencyHeadersSchema,
   IdParamsSchema,
   IncludeArchivedQuerySchema,
   PriceHistorySchema,
@@ -84,6 +85,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         body: CreateCategoryBodySchema,
         response: {
           201: CategorySchema,
@@ -95,6 +97,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       const category = await app.catalogService.createCategory(
         authenticated(request.auth),
         request.body,
+        request.headers["idempotency-key"],
       )
       return reply.status(201).send(category)
     },
@@ -106,6 +109,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         params: IdParamsSchema,
         body: VersionedCategoryBodySchema,
         response: {
@@ -118,6 +122,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       authenticated(request.auth),
       request.params.id,
       request.body,
+      request.headers["idempotency-key"],
     ),
   )
 
@@ -127,6 +132,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         params: IdParamsSchema,
         querystring: VersionQuerySchema,
         response: {
@@ -140,6 +146,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
         authenticated(request.auth),
         request.params.id,
         Number(request.query.version),
+        request.headers["idempotency-key"],
       )
       return reply.status(204).send(null)
     },
@@ -193,6 +200,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         body: CreateUnitBodySchema,
         response: {
           201: UnitSchema,
@@ -204,6 +212,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       const unit = await app.catalogService.createUnit(
         authenticated(request.auth),
         request.body,
+        request.headers["idempotency-key"],
       )
       return reply.status(201).send(unit)
     },
@@ -215,6 +224,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         params: IdParamsSchema,
         body: UpdateUnitBodySchema,
         response: {
@@ -227,6 +237,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       authenticated(request.auth),
       request.params.id,
       request.body,
+      request.headers["idempotency-key"],
     ),
   )
 
@@ -236,6 +247,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         params: IdParamsSchema,
         querystring: VersionQuerySchema,
         response: {
@@ -249,6 +261,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
         authenticated(request.auth),
         request.params.id,
         Number(request.query.version),
+        request.headers["idempotency-key"],
       )
       return reply.status(204).send(null)
     },
@@ -310,6 +323,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         body: CreateProductBodySchema,
         response: {
           201: ProductSchema,
@@ -321,6 +335,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       const product = await app.catalogService.createProduct(
         authenticated(request.auth),
         request.body,
+        request.headers["idempotency-key"],
       )
       return reply.status(201).send(product)
     },
@@ -332,6 +347,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         params: IdParamsSchema,
         body: UpdateProductBodySchema,
         response: {
@@ -344,6 +360,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       authenticated(request.auth),
       request.params.id,
       request.body,
+      request.headers["idempotency-key"],
     ),
   )
 
@@ -353,6 +370,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
+        headers: IdempotencyHeadersSchema,
         params: IdParamsSchema,
         querystring: VersionQuerySchema,
         response: {
@@ -366,6 +384,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
         authenticated(request.auth),
         request.params.id,
         Number(request.query.version),
+        request.headers["idempotency-key"],
       )
       return reply.status(204).send(null)
     },

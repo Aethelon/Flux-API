@@ -1,6 +1,10 @@
 import { sql, type Kysely } from "kysely"
 import type { Database, ProductType } from "../../database/types.js"
 import { currentCorrelationId } from "../../shared/observability/request-context.js"
+import {
+  replayedEntityId,
+  saveEntityIdempotency,
+} from "../../shared/persistence/commands.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import type {
   Category,
@@ -35,28 +39,44 @@ export interface ProductWrite {
 
 export interface CatalogRepository {
   listCategories(tenantId: string, includeArchived: boolean): Promise<Category[]>
-  getCategory(tenantId: string, id: string): Promise<Category | null>
-  createCategory(user: AuthenticatedUser, name: string, active: boolean): Promise<Category>
+  getCategory(
+    tenantId: string,
+    id: string,
+    includeArchived?: boolean,
+  ): Promise<Category | null>
+  createCategory(
+    user: AuthenticatedUser,
+    name: string,
+    active: boolean,
+    key: string,
+    hash: string,
+  ): Promise<Category>
   updateCategory(
     user: AuthenticatedUser,
     id: string,
     expectedVersion: number,
     values: { name: string; active: boolean },
     before: Category,
+    key: string,
+    hash: string,
   ): Promise<Category | null>
   archiveCategory(
     user: AuthenticatedUser,
     id: string,
     expectedVersion: number,
     before: Category,
+    key: string,
+    hash: string,
   ): Promise<boolean>
   categoryUsageCount(tenantId: string, id: string): Promise<number>
 
   listUnits(tenantId: string, includeArchived: boolean): Promise<Unit[]>
-  getUnit(tenantId: string, id: string): Promise<Unit | null>
+  getUnit(tenantId: string, id: string, includeArchived?: boolean): Promise<Unit | null>
   createUnit(
     user: AuthenticatedUser,
     values: Omit<Unit, "id" | "version" | "createdAt" | "updatedAt">,
+    key: string,
+    hash: string,
   ): Promise<Unit>
   updateUnit(
     user: AuthenticatedUser,
@@ -64,19 +84,32 @@ export interface CatalogRepository {
     expectedVersion: number,
     values: Omit<Unit, "id" | "version" | "createdAt" | "updatedAt">,
     before: Unit,
+    key: string,
+    hash: string,
   ): Promise<Unit | null>
   archiveUnit(
     user: AuthenticatedUser,
     id: string,
     expectedVersion: number,
     before: Unit,
+    key: string,
+    hash: string,
   ): Promise<boolean>
   unitUsageCount(tenantId: string, id: string): Promise<number>
 
   listProducts(tenantId: string, filters: ProductFilters): Promise<ProductList>
-  getProduct(tenantId: string, id: string): Promise<ProductRecord | null>
+  getProduct(
+    tenantId: string,
+    id: string,
+    includeArchived?: boolean,
+  ): Promise<ProductRecord | null>
   productExists(tenantId: string, id: string): Promise<boolean>
-  createProduct(user: AuthenticatedUser, values: ProductWrite): Promise<ProductRecord>
+  createProduct(
+    user: AuthenticatedUser,
+    values: ProductWrite,
+    key: string,
+    hash: string,
+  ): Promise<ProductRecord>
   updateProduct(
     user: AuthenticatedUser,
     id: string,
@@ -84,12 +117,16 @@ export interface CatalogRepository {
     values: ProductWrite,
     before: ProductRecord,
     reason: string | null,
+    key: string,
+    hash: string,
   ): Promise<ProductRecord | null>
   archiveProduct(
     user: AuthenticatedUser,
     id: string,
     expectedVersion: number,
     before: ProductRecord,
+    key: string,
+    hash: string,
   ): Promise<boolean>
   listPriceHistory(tenantId: string, productId: string): Promise<PriceHistoryEntry[]>
   listCostHistory(tenantId: string, productId: string): Promise<CostHistoryEntry[]>
@@ -290,14 +327,18 @@ export class KyselyCatalogRepository implements CatalogRepository {
     return (await query.execute()).map(mapCategory)
   }
 
-  async getCategory(tenantId: string, id: string): Promise<Category | null> {
-    const row = await this.database
+  async getCategory(
+    tenantId: string,
+    id: string,
+    includeArchived = false,
+  ): Promise<Category | null> {
+    let query = this.database
       .selectFrom("categories")
       .select(["id", "name", "active", "version", "created_at", "updated_at"])
       .where("tenant_id", "=", tenantId)
       .where("id", "=", id)
-      .where("archived_at", "is", null)
-      .executeTakeFirst()
+    if (!includeArchived) query = query.where("archived_at", "is", null)
+    const row = await query.executeTakeFirst()
 
     return row ? mapCategory(row) : null
   }
@@ -306,8 +347,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
     user: AuthenticatedUser,
     name: string,
     active: boolean,
+    key: string,
+    hash: string,
   ): Promise<Category> {
+    const route = "POST /api/v1/categories"
     const id = await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return replay
       const row = await transaction
         .insertInto("categories")
         .values({
@@ -326,6 +372,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
         name,
         active,
       })
+      await saveEntityIdempotency(transaction, user, route, key, hash, row.id, 201)
       return row.id
     })
 
@@ -340,8 +387,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
     expectedVersion: number,
     values: { name: string; active: boolean },
     before: Category,
+    key: string,
+    hash: string,
   ): Promise<Category | null> {
+    const route = `PATCH /api/v1/categories/${id}`
     const updated = await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return replay
       const row = await transaction
         .updateTable("categories")
         .set({
@@ -358,12 +410,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
         .returning("id")
         .executeTakeFirst()
 
-      if (!row) return false
+      if (!row) return null
       await insertAudit(transaction, user, "category.updated", "category", id, before, values)
-      return true
+      await saveEntityIdempotency(transaction, user, route, key, hash, id, 200)
+      return id
     })
 
-    return updated ? this.getCategory(user.tenantId, id) : null
+    return updated ? this.getCategory(user.tenantId, updated) : null
   }
 
   async archiveCategory(
@@ -371,8 +424,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
     id: string,
     expectedVersion: number,
     before: Category,
+    key: string,
+    hash: string,
   ): Promise<boolean> {
+    const route = `DELETE /api/v1/categories/${id}`
     return this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return true
       const row = await transaction
         .updateTable("categories")
         .set({
@@ -391,6 +449,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
 
       if (!row) return false
       await insertAudit(transaction, user, "category.archived", "category", id, before, null)
+      await saveEntityIdempotency(transaction, user, route, key, hash, id, 204)
       return true
     })
   }
@@ -430,8 +489,12 @@ export class KyselyCatalogRepository implements CatalogRepository {
     return (await query.execute()).map(mapUnit)
   }
 
-  async getUnit(tenantId: string, id: string): Promise<Unit | null> {
-    const row = await this.database
+  async getUnit(
+    tenantId: string,
+    id: string,
+    includeArchived = false,
+  ): Promise<Unit | null> {
+    let query = this.database
       .selectFrom("units")
       .select([
         "id",
@@ -446,8 +509,8 @@ export class KyselyCatalogRepository implements CatalogRepository {
       ])
       .where("tenant_id", "=", tenantId)
       .where("id", "=", id)
-      .where("archived_at", "is", null)
-      .executeTakeFirst()
+    if (!includeArchived) query = query.where("archived_at", "is", null)
+    const row = await query.executeTakeFirst()
 
     return row ? mapUnit(row) : null
   }
@@ -455,8 +518,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
   async createUnit(
     user: AuthenticatedUser,
     values: Omit<Unit, "id" | "version" | "createdAt" | "updatedAt">,
+    key: string,
+    hash: string,
   ): Promise<Unit> {
+    const route = "POST /api/v1/units"
     const id = await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return replay
       const row = await transaction
         .insertInto("units")
         .values({
@@ -474,6 +542,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
         .executeTakeFirstOrThrow()
 
       await insertAudit(transaction, user, "unit.created", "unit", row.id, null, values)
+      await saveEntityIdempotency(transaction, user, route, key, hash, row.id, 201)
       return row.id
     })
 
@@ -488,8 +557,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
     expectedVersion: number,
     values: Omit<Unit, "id" | "version" | "createdAt" | "updatedAt">,
     before: Unit,
+    key: string,
+    hash: string,
   ): Promise<Unit | null> {
+    const route = `PATCH /api/v1/units/${id}`
     const updated = await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return replay
       const row = await transaction
         .updateTable("units")
         .set({
@@ -509,12 +583,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
         .returning("id")
         .executeTakeFirst()
 
-      if (!row) return false
+      if (!row) return null
       await insertAudit(transaction, user, "unit.updated", "unit", id, before, values)
-      return true
+      await saveEntityIdempotency(transaction, user, route, key, hash, id, 200)
+      return id
     })
 
-    return updated ? this.getUnit(user.tenantId, id) : null
+    return updated ? this.getUnit(user.tenantId, updated) : null
   }
 
   async archiveUnit(
@@ -522,8 +597,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
     id: string,
     expectedVersion: number,
     before: Unit,
+    key: string,
+    hash: string,
   ): Promise<boolean> {
+    const route = `DELETE /api/v1/units/${id}`
     return this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return true
       const row = await transaction
         .updateTable("units")
         .set({
@@ -542,6 +622,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
 
       if (!row) return false
       await insertAudit(transaction, user, "unit.archived", "unit", id, before, null)
+      await saveEntityIdempotency(transaction, user, route, key, hash, id, 204)
       return true
     })
   }
@@ -618,16 +699,20 @@ export class KyselyCatalogRepository implements CatalogRepository {
     }
   }
 
-  async getProduct(tenantId: string, id: string): Promise<ProductRecord | null> {
-    const row = await this.database
+  async getProduct(
+    tenantId: string,
+    id: string,
+    includeArchived = false,
+  ): Promise<ProductRecord | null> {
+    let query = this.database
       .selectFrom("products as product")
       .innerJoin("categories as category", "category.id", "product.category_id")
       .innerJoin("units as unit", "unit.id", "product.unit_id")
       .select(productSelection())
       .where("product.tenant_id", "=", tenantId)
       .where("product.id", "=", id)
-      .where("product.archived_at", "is", null)
-      .executeTakeFirst() as ProductRow | undefined
+    if (!includeArchived) query = query.where("product.archived_at", "is", null)
+    const row = await query.executeTakeFirst() as ProductRow | undefined
 
     return row ? mapProduct(row) : null
   }
@@ -646,8 +731,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
   async createProduct(
     user: AuthenticatedUser,
     values: ProductWrite,
+    key: string,
+    hash: string,
   ): Promise<ProductRecord> {
+    const route = "POST /api/v1/products"
     const id = await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return replay
       const row = await transaction
         .insertInto("products")
         .values({
@@ -715,6 +805,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
 
       await insertAudit(transaction, user, "product.created", "product", row.id, null, values)
       await insertOutbox(transaction, user.tenantId, "product.created", row.id, values)
+      await saveEntityIdempotency(transaction, user, route, key, hash, row.id, 201)
       return row.id
     })
 
@@ -730,6 +821,8 @@ export class KyselyCatalogRepository implements CatalogRepository {
     values: ProductWrite,
     before: ProductRecord,
     reason: string | null,
+    key: string,
+    hash: string,
   ): Promise<ProductRecord | null> {
     const priceChanged = before.priceCents !== values.priceCents
     const costChanged = before.costCents !== values.costCents
@@ -739,7 +832,10 @@ export class KyselyCatalogRepository implements CatalogRepository {
       throw new Error("Price and cost history require a change reason")
     }
 
+    const route = `PATCH /api/v1/products/${id}`
     const updated = await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return replay
       const row = await transaction
         .updateTable("products")
         .set({
@@ -766,7 +862,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
         .returning("id")
         .executeTakeFirst()
 
-      if (!row) return false
+      if (!row) return null
 
       if (before.active !== values.active && before.type !== "service") {
         if (values.active) {
@@ -830,10 +926,11 @@ export class KyselyCatalogRepository implements CatalogRepository {
 
       await insertAudit(transaction, user, "product.updated", "product", id, before, values)
       await insertOutbox(transaction, user.tenantId, "product.updated", id, values)
-      return true
+      await saveEntityIdempotency(transaction, user, route, key, hash, id, 200)
+      return id
     })
 
-    return updated ? this.getProduct(user.tenantId, id) : null
+    return updated ? this.getProduct(user.tenantId, updated) : null
   }
 
   async archiveProduct(
@@ -841,8 +938,13 @@ export class KyselyCatalogRepository implements CatalogRepository {
     id: string,
     expectedVersion: number,
     before: ProductRecord,
+    key: string,
+    hash: string,
   ): Promise<boolean> {
+    const route = `DELETE /api/v1/products/${id}`
     return this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return true
       const row = await transaction
         .updateTable("products")
         .set({
@@ -868,6 +970,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
       await insertOutbox(transaction, user.tenantId, "product.archived", id, {
         productId: id,
       })
+      await saveEntityIdempotency(transaction, user, route, key, hash, id, 204)
       return true
     })
   }

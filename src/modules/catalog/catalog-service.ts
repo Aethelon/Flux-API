@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { AppError } from "../../shared/errors/app-error.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import type {
@@ -43,6 +44,10 @@ interface UpdateUnitInput {
   allowsFractional?: boolean
   quantityScale?: number
   active?: boolean
+}
+
+function requestHash(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex")
 }
 
 function notFound(entity: string): AppError {
@@ -122,12 +127,19 @@ export class CatalogService {
   async createCategory(
     user: AuthenticatedUser,
     input: CreateCategoryInput,
+    idempotencyKey: string,
   ): Promise<Category> {
+    const values = {
+      name: trimRequired(input.name, "Category name"),
+      active: input.active ?? true,
+    }
     try {
       return await this.repository.createCategory(
         user,
-        trimRequired(input.name, "Category name"),
-        input.active ?? true,
+        values.name,
+        values.active,
+        idempotencyKey,
+        requestHash(values),
       )
     } catch (error) {
       throwCatalogWriteError(error)
@@ -138,9 +150,9 @@ export class CatalogService {
     user: AuthenticatedUser,
     id: string,
     input: UpdateCategoryInput,
+    idempotencyKey: string,
   ): Promise<Category> {
     const current = await this.getCategory(user.tenantId, id)
-    if (current.version !== input.version) throw staleVersion()
     if (input.name === undefined && input.active === undefined) {
       throw new AppError(400, "NO_CHANGES", "At least one field must be changed.")
     }
@@ -157,6 +169,14 @@ export class CatalogService {
           active: input.active ?? current.active,
         },
         current,
+        idempotencyKey,
+        requestHash({
+          version: input.version,
+          name: input.name === undefined
+            ? current.name
+            : trimRequired(input.name, "Category name"),
+          active: input.active ?? current.active,
+        }),
       )
 
       if (!updated) throw staleVersion()
@@ -170,9 +190,10 @@ export class CatalogService {
     user: AuthenticatedUser,
     id: string,
     version: number,
+    idempotencyKey: string,
   ): Promise<void> {
-    const current = await this.getCategory(user.tenantId, id)
-    if (current.version !== version) throw staleVersion()
+    const current = await this.repository.getCategory(user.tenantId, id, true)
+    if (!current) throw notFound("Category")
     if (await this.repository.categoryUsageCount(user.tenantId, id) > 0) {
       throw new AppError(
         409,
@@ -180,7 +201,14 @@ export class CatalogService {
         "A category referenced by active products cannot be archived.",
       )
     }
-    if (!await this.repository.archiveCategory(user, id, version, current)) {
+    if (!await this.repository.archiveCategory(
+      user,
+      id,
+      version,
+      current,
+      idempotencyKey,
+      requestHash({ version }),
+    )) {
       throw staleVersion()
     }
   }
@@ -195,19 +223,29 @@ export class CatalogService {
     return unit
   }
 
-  async createUnit(user: AuthenticatedUser, input: CreateUnitInput): Promise<Unit> {
+  async createUnit(
+    user: AuthenticatedUser,
+    input: CreateUnitInput,
+    idempotencyKey: string,
+  ): Promise<Unit> {
     const allowsFractional = input.allowsFractional ?? false
     const quantityScale = input.quantityScale ?? (allowsFractional ? 3 : 0)
     validateUnitSettings(allowsFractional, quantityScale)
 
     try {
-      return await this.repository.createUnit(user, {
+      const values = {
         name: trimRequired(input.name, "Unit name"),
         abbreviation: trimRequired(input.abbreviation, "Unit abbreviation"),
         allowsFractional,
         quantityScale,
         active: input.active ?? true,
-      })
+      }
+      return await this.repository.createUnit(
+        user,
+        values,
+        idempotencyKey,
+        requestHash(values),
+      )
     } catch (error) {
       throwCatalogWriteError(error)
     }
@@ -217,9 +255,9 @@ export class CatalogService {
     user: AuthenticatedUser,
     id: string,
     input: UpdateUnitInput,
+    idempotencyKey: string,
   ): Promise<Unit> {
     const current = await this.getUnit(user.tenantId, id)
-    if (current.version !== input.version) throw staleVersion()
     if (Object.keys(input).length === 1) {
       throw new AppError(400, "NO_CHANGES", "At least one field must be changed.")
     }
@@ -228,6 +266,17 @@ export class CatalogService {
     const quantityScale = input.quantityScale
       ?? (input.allowsFractional === false ? 0 : current.quantityScale)
     validateUnitSettings(allowsFractional, quantityScale)
+    if (
+      (allowsFractional !== current.allowsFractional
+        || quantityScale !== current.quantityScale)
+      && await this.repository.unitUsageCount(user.tenantId, id) > 0
+    ) {
+      throw new AppError(
+        409,
+        "UNIT_SCALE_IN_USE",
+        "The quantity scale of a unit referenced by active products cannot be changed.",
+      )
+    }
 
     try {
       const updated = await this.repository.updateUnit(
@@ -246,6 +295,19 @@ export class CatalogService {
           active: input.active ?? current.active,
         },
         current,
+        idempotencyKey,
+        requestHash({
+          version: input.version,
+          name: input.name === undefined
+            ? current.name
+            : trimRequired(input.name, "Unit name"),
+          abbreviation: input.abbreviation === undefined
+            ? current.abbreviation
+            : trimRequired(input.abbreviation, "Unit abbreviation"),
+          allowsFractional,
+          quantityScale,
+          active: input.active ?? current.active,
+        }),
       )
 
       if (!updated) throw staleVersion()
@@ -259,9 +321,10 @@ export class CatalogService {
     user: AuthenticatedUser,
     id: string,
     version: number,
+    idempotencyKey: string,
   ): Promise<void> {
-    const current = await this.getUnit(user.tenantId, id)
-    if (current.version !== version) throw staleVersion()
+    const current = await this.repository.getUnit(user.tenantId, id, true)
+    if (!current) throw notFound("Unit")
     if (await this.repository.unitUsageCount(user.tenantId, id) > 0) {
       throw new AppError(
         409,
@@ -269,7 +332,14 @@ export class CatalogService {
         "A unit referenced by active products cannot be archived.",
       )
     }
-    if (!await this.repository.archiveUnit(user, id, version, current)) {
+    if (!await this.repository.archiveUnit(
+      user,
+      id,
+      version,
+      current,
+      idempotencyKey,
+      requestHash({ version }),
+    )) {
       throw staleVersion()
     }
   }
@@ -287,11 +357,17 @@ export class CatalogService {
   async createProduct(
     user: AuthenticatedUser,
     input: CreateProductInput,
+    idempotencyKey: string,
   ): Promise<Product> {
     const values = await this.prepareProductWrite(user, input)
 
     try {
-      return await this.repository.createProduct(user, values)
+      return await this.repository.createProduct(
+        user,
+        values,
+        idempotencyKey,
+        requestHash(values),
+      )
     } catch (error) {
       throwCatalogWriteError(error)
     }
@@ -301,9 +377,9 @@ export class CatalogService {
     user: AuthenticatedUser,
     id: string,
     input: UpdateProductInput,
+    idempotencyKey: string,
   ): Promise<Product> {
     const current = await this.getProductRecord(user.tenantId, id)
-    if (current.version !== input.version) throw staleVersion()
 
     const merged: CreateProductInput = {
       sku: input.sku === undefined ? current.sku : input.sku,
@@ -352,6 +428,12 @@ export class CatalogService {
         values,
         current,
         input.changeReason?.trim() ?? null,
+        idempotencyKey,
+        requestHash({
+          version: input.version,
+          ...values,
+          changeReason: input.changeReason?.trim() ?? null,
+        }),
       )
       if (!updated) throw staleVersion()
       return updated
@@ -364,10 +446,18 @@ export class CatalogService {
     user: AuthenticatedUser,
     id: string,
     version: number,
+    idempotencyKey: string,
   ): Promise<void> {
-    const current = await this.getProductRecord(user.tenantId, id)
-    if (current.version !== version) throw staleVersion()
-    if (!await this.repository.archiveProduct(user, id, version, current)) {
+    const current = await this.repository.getProduct(user.tenantId, id, true)
+    if (!current) throw notFound("Product")
+    if (!await this.repository.archiveProduct(
+      user,
+      id,
+      version,
+      current,
+      idempotencyKey,
+      requestHash({ version }),
+    )) {
       throw staleVersion()
     }
   }

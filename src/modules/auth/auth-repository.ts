@@ -29,6 +29,7 @@ export interface RotateSessionInput extends CreateSessionInput {
 
 export interface AuthRepository {
   findLoginCandidates(email: string, tenantSlug?: string): Promise<LoginUserRecord[]>
+  recordFailedLogin(user: PublicUser, metadata: SessionMetadata): Promise<void>
   createSession(input: CreateSessionInput): Promise<string>
   findSessionByRefreshHash(refreshTokenHash: string): Promise<RefreshSessionRecord | null>
   rotateSession(input: RotateSessionInput): Promise<boolean>
@@ -139,6 +140,25 @@ export class KyselyAuthRepository implements AuthRepository {
       ...publicUser(row),
       passwordHash: row.password_hash,
     }))
+  }
+
+  async recordFailedLogin(user: PublicUser, metadata: SessionMetadata): Promise<void> {
+    await this.database.insertInto("audit_events").values({
+      tenant_id: user.tenantId,
+      actor_type: "user",
+      actor_id: user.id,
+      action: "auth.login_failed",
+      entity_type: "user",
+      entity_id: user.id,
+      request_id: metadata.requestId,
+      correlation_id: metadata.requestId,
+      source: "api",
+      reason: "invalid_credentials",
+      before_json: null,
+      after_json: null,
+      ip_address: metadata.ipAddress,
+      user_agent: metadata.userAgent,
+    }).execute()
   }
 
   async createSession(input: CreateSessionInput): Promise<string> {

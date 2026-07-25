@@ -157,16 +157,24 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
     assert.equal(customer.statusCode, 201)
     assert.equal(replayedCustomer.body.id, customer.body.id)
 
-    const category = await request("POST", "/api/v1/categories", adminToken, {
+    const categoryKey = randomUUID()
+    const categoryPayload = {
       name: `Integration ${randomUUID()}`,
-    })
+    }
+    const category = await request(
+      "POST", "/api/v1/categories", adminToken, categoryPayload, categoryKey,
+    )
+    const replayedCategory = await request(
+      "POST", "/api/v1/categories", adminToken, categoryPayload, categoryKey,
+    )
     const unit = await request("POST", "/api/v1/units", adminToken, {
       name: `Unit ${randomUUID()}`,
       abbreviation: `u${randomUUID().slice(0, 6)}`,
       allowsFractional: false,
       quantityScale: 0,
-    })
+    }, randomUUID())
     assert.equal(category.statusCode, 201)
+    assert.equal(replayedCategory.body.id, category.body.id)
     assert.equal(unit.statusCode, 201)
     const product = await request("POST", "/api/v1/products", adminToken, {
       type: "finished_product",
@@ -177,7 +185,7 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
       categoryId: category.body.id,
       unitId: unit.body.id,
       minimumStock: 2,
-    })
+    }, randomUUID())
     assert.equal(product.statusCode, 201)
 
     const supplier = await request("POST", "/api/v1/suppliers", adminToken, {

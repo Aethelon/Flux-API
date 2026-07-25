@@ -1,5 +1,9 @@
 import { Type } from "@sinclair/typebox"
 
+export const IdempotencyHeadersSchema = Type.Object({
+  "idempotency-key": Type.String({ minLength: 1, maxLength: 200 }),
+}, { additionalProperties: true })
+
 export const ProductTypeSchema = Type.Union([
   Type.Literal("raw_material"),
   Type.Literal("finished_product"),

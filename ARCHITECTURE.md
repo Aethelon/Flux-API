@@ -1,5 +1,9 @@
 # Flux API Architecture
 
+This document defines the target architecture and business rules. It is not a claim
+that every planned capability is already implemented. The verified delivery status and
+known gaps are tracked in [docs/implementation-status.md](./docs/implementation-status.md).
+
 ## 1. Purpose
 
 Flux API is the backend for a multi-tenant retail, inventory, cash-register, customer, employee, service-order, analytics, and decision-support system.
@@ -260,7 +264,7 @@ The database stores business facts and lifecycle state; the backend derives disp
 - An active stock-managed product with `0 < on_hand <= minimum_stock` has low stock.
 - Other active stock-managed products are available.
 
-The API may return this derived `inventory_status`, but clients must not persist or send it as authoritative input. This removes the current duplication between stored mock status and frontend recalculation.
+The API may return this derived `inventory_status`, but clients must not persist or send it as authoritative input. This prevents the duplication that existed between prototype data and frontend recalculation.
 
 ### 6.9 Historical, analytical, and AI tables
 

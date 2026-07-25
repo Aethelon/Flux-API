@@ -102,7 +102,7 @@ void describe("catalog business rules", () => {
       unitId: unit.id,
       minimumStock: 15,
       priceCents: 20_000,
-    })
+    }, "catalog-test-key")
 
     assert.equal(written?.minimumStock, 0)
   })
@@ -116,10 +116,29 @@ void describe("catalog business rules", () => {
         abbreviation: "un",
         allowsFractional: false,
         quantityScale: 2,
-      }),
+      }, "catalog-test-key"),
       {
         statusCode: 400,
         code: "INVALID_UNIT_SCALE",
+      },
+    )
+  })
+
+  void it("does not change the quantity scale of a unit used by an active product", async () => {
+    const service = new CatalogService(repository({
+      getUnit: () => Promise.resolve(unit),
+      unitUsageCount: () => Promise.resolve(1),
+    }))
+
+    await assert.rejects(
+      service.updateUnit(user, unit.id, {
+        version: unit.version,
+        allowsFractional: true,
+        quantityScale: 3,
+      }, "catalog-test-key"),
+      {
+        statusCode: 409,
+        code: "UNIT_SCALE_IN_USE",
       },
     )
   })
@@ -135,7 +154,7 @@ void describe("catalog business rules", () => {
       service.updateProduct(user, product.id, {
         version: 1,
         priceCents: 11_000,
-      }),
+      }, "catalog-test-key"),
       {
         statusCode: 400,
         code: "CHANGE_REASON_REQUIRED",
@@ -150,7 +169,7 @@ void describe("catalog business rules", () => {
     }))
 
     await assert.rejects(
-      service.archiveCategory(user, category.id, category.version),
+      service.archiveCategory(user, category.id, category.version, "catalog-test-key"),
       {
         statusCode: 409,
         code: "CATEGORY_IN_USE",
@@ -167,7 +186,7 @@ void describe("catalog business rules", () => {
       service.updateProduct(user, product.id, {
         version: product.version,
         type: "service",
-      }),
+      }, "catalog-test-key"),
       {
         statusCode: 409,
         code: "PRODUCT_INVENTORY_TYPE_IMMUTABLE",

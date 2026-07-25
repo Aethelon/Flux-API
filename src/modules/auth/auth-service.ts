@@ -18,6 +18,9 @@ import type {
   SessionMetadata,
 } from "./types.js"
 
+const DUMMY_PASSWORD_HASH =
+  "scrypt$v=1$N=32768$r=8$p=1$RzUIW4LvK3ZX-3WuAwaRZg$gVuv_F0qVC5Bilp8IjfSbZx28Azpup_GmyXXs6O8RLIjWBcy2dn2HSCShGxth5BbY9W-LLsIC8Uv8WfSEooNIA"
+
 function unauthorized(): AppError {
   return new AppError(401, "UNAUTHORIZED", "Invalid or expired authentication.")
 }
@@ -43,7 +46,12 @@ export class AuthService {
     }
 
     const user = candidates[0]
-    if (!user || !await verifyPassword(input.password, user.passwordHash)) {
+    const validPassword = await verifyPassword(
+      input.password,
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+    )
+    if (!user || !validPassword) {
+      if (user) await this.repository.recordFailedLogin(user, metadata)
       throw new AppError(401, "INVALID_CREDENTIALS", "Invalid email or password.")
     }
 
