@@ -659,6 +659,42 @@ export interface ServiceOrderStatusHistoryTable {
   created_at: GeneratedTimestamp
 }
 
+export type ExportSource = "sales_history" | "sales_kpis" | "audit_events"
+export type JobStatus = "pending" | "processing" | "completed" | "failed"
+
+export interface JobRunTable {
+  id: Generated<string>
+  tenant_id: string
+  job_type: "export"
+  status: JobStatus
+  requested_by: string
+  parameters: JsonValue
+  cursor: JsonValue | null
+  total_count: number | null
+  processed_count: Generated<number>
+  attempts: Generated<number>
+  error_class: string | null
+  error_message: string | null
+  available_at: GeneratedTimestamp
+  started_at: NullableTimestamp
+  finished_at: NullableTimestamp
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
+export interface ExportArtifactTable {
+  id: Generated<string>
+  tenant_id: string
+  job_run_id: string
+  filename: string
+  content_type: "text/csv; charset=utf-8"
+  content: string
+  row_count: number
+  sha256: string
+  created_at: GeneratedTimestamp
+  expires_at: Timestamp
+}
+
 export interface Database {
   tenants: TenantTable
   tenant_settings: TenantSettingsTable
@@ -700,4 +736,6 @@ export interface Database {
   service_order_columns: ServiceOrderColumnTable
   service_orders: ServiceOrderTable
   service_order_status_history: ServiceOrderStatusHistoryTable
+  job_runs: JobRunTable
+  export_artifacts: ExportArtifactTable
 }

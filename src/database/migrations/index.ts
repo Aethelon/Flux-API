@@ -10,6 +10,7 @@ import { salesMigration } from "./008-sales.js"
 import { serviceOrdersMigration } from "./009-service-orders.js"
 import { phaseOneIntegrityMigration } from "./010-phase-one-integrity.js"
 import { zeroValueReturnsMigration } from "./011-zero-value-returns.js"
+import { historyDashboardExportsMigration } from "./012-history-dashboard-exports.js"
 
 const migrations: Record<string, Migration> = {
   "001-foundation": foundationMigration,
@@ -23,6 +24,7 @@ const migrations: Record<string, Migration> = {
   "009-service-orders": serviceOrdersMigration,
   "010-phase-one-integrity": phaseOneIntegrityMigration,
   "011-zero-value-returns": zeroValueReturnsMigration,
+  "012-history-dashboard-exports": historyDashboardExportsMigration,
 }
 
 export const migrationProvider: MigrationProvider = {

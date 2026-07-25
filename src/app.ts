@@ -22,6 +22,10 @@ import { registerSupplyModule } from "./modules/supply/register.js"
 import { registerCashModule } from "./modules/cash/register.js"
 import { registerSalesModule } from "./modules/sales/register.js"
 import { registerServiceOrderModule } from "./modules/service-orders/register.js"
+import { registerHistoryModule } from "./modules/history/register.js"
+import { registerDashboardModule } from "./modules/dashboard/register.js"
+import { registerAuditModule } from "./modules/audit/register.js"
+import { registerExportModule } from "./modules/exports/register.js"
 
 interface BuildAppOptions {
   config?: AppConfig
@@ -97,6 +101,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerCashModule(app)
   registerSalesModule(app)
   registerServiceOrderModule(app)
+  registerHistoryModule(app)
+  registerDashboardModule(app)
+  registerAuditModule(app)
+  registerExportModule(app)
   void app.register(healthRoutes, { prefix: "/api/v1/health" })
 
   return app

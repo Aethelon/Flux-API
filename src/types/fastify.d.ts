@@ -11,6 +11,10 @@ import type { SupplyService } from "../modules/supply/supply-service.js"
 import type { CashService } from "../modules/cash/cash-service.js"
 import type { SalesService } from "../modules/sales/sales-service.js"
 import type { ServiceOrderService } from "../modules/service-orders/service-order-service.js"
+import type { HistoryService } from "../modules/history/history-service.js"
+import type { DashboardService } from "../modules/dashboard/dashboard-service.js"
+import type { AuditService } from "../modules/audit/audit-service.js"
+import type { ExportService } from "../modules/exports/export-service.js"
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -25,6 +29,10 @@ declare module "fastify" {
     cashService: CashService
     salesService: SalesService
     serviceOrderService: ServiceOrderService
+    historyService: HistoryService
+    dashboardService: DashboardService
+    auditService: AuditService
+    exportService: ExportService
     authenticate: (request: FastifyRequest) => Promise<void>
     authorize: (roles: readonly UserRole[]) => (request: FastifyRequest) => Promise<void>
   }
