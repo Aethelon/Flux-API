@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from "../modules/auth/types.js"
 import type { Database, UserRole } from "../database/types.js"
 import type { CatalogService } from "../modules/catalog/catalog-service.js"
 import type { InventoryService } from "../modules/inventory/inventory-service.js"
+import type { StockCountService } from "../modules/inventory/stock-count-service.js"
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -13,6 +14,7 @@ declare module "fastify" {
     authService: AuthService
     catalogService: CatalogService
     inventoryService: InventoryService
+    stockCountService: StockCountService
     authenticate: (request: FastifyRequest) => Promise<void>
     authorize: (roles: readonly UserRole[]) => (request: FastifyRequest) => Promise<void>
   }

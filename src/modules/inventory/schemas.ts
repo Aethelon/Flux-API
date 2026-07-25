@@ -136,3 +136,114 @@ export const CreateManualMovementBodySchema = Type.Object(
   },
   { additionalProperties: false },
 )
+
+export const StockCountStatusSchema = Type.Union([
+  Type.Literal("draft"),
+  Type.Literal("confirmed"),
+  Type.Literal("cancelled"),
+])
+
+export const StockCountItemSchema = Type.Object({
+  id: Type.String({ format: "uuid" }),
+  product: Type.Object({
+    id: Type.String({ format: "uuid" }),
+    name: Type.String(),
+    sku: Type.Union([Type.String(), Type.Null()]),
+    unitAbbreviation: Type.String(),
+    quantityScale: Type.Integer(),
+  }),
+  expectedQuantity: Type.Number(),
+  countedQuantity: Type.Union([Type.Number(), Type.Null()]),
+  difference: Type.Union([Type.Number(), Type.Null()]),
+  unitCostSnapshotCents: Type.Union([Type.Number(), Type.Null()]),
+  movementId: Type.Union([Type.String({ format: "uuid" }), Type.Null()]),
+})
+
+const UserReferenceSchema = Type.Object({
+  id: Type.String({ format: "uuid" }),
+  name: Type.String(),
+})
+
+export const StockCountSchema = Type.Object({
+  id: Type.String({ format: "uuid" }),
+  status: StockCountStatusSchema,
+  reason: Type.String(),
+  startedBy: UserReferenceSchema,
+  startedAt: Type.String({ format: "date-time" }),
+  confirmedBy: Type.Union([UserReferenceSchema, Type.Null()]),
+  confirmedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+  cancelledBy: Type.Union([UserReferenceSchema, Type.Null()]),
+  cancelledAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+  cancellationReason: Type.Union([Type.String(), Type.Null()]),
+  version: Type.Integer(),
+  items: Type.Array(StockCountItemSchema),
+})
+
+export const StockCountListSchema = Type.Object({
+  data: Type.Array(Type.Object({
+    id: Type.String({ format: "uuid" }),
+    status: StockCountStatusSchema,
+    reason: Type.String(),
+    startedBy: UserReferenceSchema,
+    startedAt: Type.String({ format: "date-time" }),
+    confirmedBy: Type.Union([UserReferenceSchema, Type.Null()]),
+    confirmedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    cancelledBy: Type.Union([UserReferenceSchema, Type.Null()]),
+    cancelledAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    cancellationReason: Type.Union([Type.String(), Type.Null()]),
+    version: Type.Integer(),
+    itemCount: Type.Integer(),
+  })),
+  page: Type.Integer(),
+  pageSize: Type.Integer(),
+  total: Type.Integer(),
+})
+
+export const StockCountListQuerySchema = Type.Object({
+  ...PageQueryProperties,
+  status: Type.Optional(StockCountStatusSchema),
+})
+
+export const StockCountIdParamsSchema = Type.Object({
+  countId: Type.String({ format: "uuid" }),
+})
+
+export const CreateStockCountBodySchema = Type.Object(
+  {
+    reason: Type.String({ minLength: 3, maxLength: 500 }),
+    productIds: Type.Array(
+      Type.String({ format: "uuid" }),
+      { minItems: 1, maxItems: 500, uniqueItems: true },
+    ),
+  },
+  { additionalProperties: false },
+)
+
+export const ConfirmStockCountBodySchema = Type.Object(
+  {
+    version: Type.Integer({ minimum: 1 }),
+    items: Type.Array(
+      Type.Object(
+        {
+          productId: Type.String({ format: "uuid" }),
+          countedQuantity: Type.Number({ minimum: 0 }),
+          unitCostCents: Type.Optional(Type.Number({
+            minimum: 0,
+            maximum: 2_147_483_647,
+          })),
+        },
+        { additionalProperties: false },
+      ),
+      { minItems: 1, maxItems: 500 },
+    ),
+  },
+  { additionalProperties: false },
+)
+
+export const CancelStockCountBodySchema = Type.Object(
+  {
+    version: Type.Integer({ minimum: 1 }),
+    reason: Type.String({ minLength: 3, maxLength: 500 }),
+  },
+  { additionalProperties: false },
+)

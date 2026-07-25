@@ -1,4 +1,8 @@
-import type { ProductType, StockMovementType } from "../../database/types.js"
+import type {
+  ProductType,
+  StockCountStatus,
+  StockMovementType,
+} from "../../database/types.js"
 
 export type InventoryStatus = "inactive" | "sold_out" | "low_stock" | "available"
 export type ManualMovementType = "receipt" | "positive_adjustment" | "negative_adjustment"
@@ -98,5 +102,77 @@ export interface CreateManualMovementInput {
   quantity: number
   unitCostCents?: number
   sourceReference?: string
+  reason: string
+}
+
+export interface StockCountItem {
+  id: string
+  product: {
+    id: string
+    name: string
+    sku: string | null
+    unitAbbreviation: string
+    quantityScale: number
+  }
+  expectedQuantity: number
+  countedQuantity: number | null
+  difference: number | null
+  unitCostSnapshotCents: number | null
+  movementId: string | null
+}
+
+export interface StockCount {
+  id: string
+  status: StockCountStatus
+  reason: string
+  startedBy: {
+    id: string
+    name: string
+  }
+  startedAt: string
+  confirmedBy: {
+    id: string
+    name: string
+  } | null
+  confirmedAt: string | null
+  cancelledBy: {
+    id: string
+    name: string
+  } | null
+  cancelledAt: string | null
+  cancellationReason: string | null
+  version: number
+  items: StockCountItem[]
+}
+
+export interface StockCountList {
+  data: Array<Omit<StockCount, "items"> & { itemCount: number }>
+  page: number
+  pageSize: number
+  total: number
+}
+
+export interface StockCountFilters {
+  page: number
+  pageSize: number
+  status?: StockCountStatus
+}
+
+export interface CreateStockCountInput {
+  reason: string
+  productIds: string[]
+}
+
+export interface ConfirmStockCountInput {
+  version: number
+  items: Array<{
+    productId: string
+    countedQuantity: number
+    unitCostCents?: number
+  }>
+}
+
+export interface CancelStockCountInput {
+  version: number
   reason: string
 }

@@ -17,6 +17,7 @@ export type StockMovementType =
   | "positive_adjustment"
   | "negative_adjustment"
   | "stock_count_adjustment"
+export type StockCountStatus = "draft" | "confirmed" | "cancelled"
 
 export interface TenantTable {
   id: Generated<string>
@@ -227,6 +228,73 @@ export interface StockMovementTable {
   created_at: GeneratedTimestamp
 }
 
+export interface StockCountTable {
+  id: Generated<string>
+  tenant_id: string
+  status: StockCountStatus
+  reason: string
+  started_by: string
+  started_at: GeneratedTimestamp
+  confirmed_by: string | null
+  confirmed_at: NullableTimestamp
+  cancelled_by: string | null
+  cancelled_at: NullableTimestamp
+  cancellation_reason: string | null
+  version: Generated<number>
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
+export interface StockCountItemTable {
+  id: Generated<string>
+  tenant_id: string
+  stock_count_id: string
+  product_id: string
+  expected_quantity: ColumnType<string, number | string, never>
+  counted_quantity: ColumnType<string | null, number | string | null, number | string>
+  difference: ColumnType<string | null, number | string | null, number | string>
+  unit_cost_snapshot_cents: ColumnType<
+    string | null,
+    number | string | null,
+    number | string | null
+  >
+  movement_id: string | null
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
+export interface StockoutIntervalTable {
+  id: Generated<string>
+  tenant_id: string
+  product_id: string
+  started_at: Timestamp
+  ended_at: NullableTimestamp
+  detected_reason: string
+  source_movement_id: string | null
+  ended_by_movement_id: string | null
+  created_at: GeneratedTimestamp
+}
+
+export interface InventoryDailySnapshotTable {
+  tenant_id: string
+  product_id: string
+  local_date: ColumnType<string, string, never>
+  opening: ColumnType<string, number | string, never>
+  received: ColumnType<string, number | string, number | string>
+  sold: ColumnType<string, number | string, number | string>
+  returned: ColumnType<string, number | string, number | string>
+  adjusted: ColumnType<string, number | string, number | string>
+  closing: ColumnType<string, number | string, number | string>
+  reserved: ColumnType<string, number | string, number | string>
+  in_stock_minutes: ColumnType<string, number | string, number | string>
+  stockout_minutes: ColumnType<string, number | string, number | string>
+  observed_minutes: ColumnType<string, number | string, number | string>
+  last_observed_at: Timestamp
+  complete: boolean
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
 export interface Database {
   tenants: TenantTable
   tenant_settings: TenantSettingsTable
@@ -242,4 +310,8 @@ export interface Database {
   product_cost_history: ProductCostHistoryTable
   inventory_balances: InventoryBalanceTable
   stock_movements: StockMovementTable
+  stock_counts: StockCountTable
+  stock_count_items: StockCountItemTable
+  stockout_intervals: StockoutIntervalTable
+  inventory_daily_snapshots: InventoryDailySnapshotTable
 }

@@ -16,6 +16,7 @@ import type {
   MovementFilters,
   StockMovement,
 } from "./types.js"
+import { recordInventoryTracking } from "./inventory-tracking.js"
 
 export interface StockProductRecord {
   id: string
@@ -488,6 +489,7 @@ export class KyselyInventoryRepository implements InventoryRepository {
         .where("product_id", "=", input.productId)
         .execute()
 
+      const occurredAt = new Date()
       const movement = await transaction
         .insertInto("stock_movements")
         .values({
@@ -503,10 +505,23 @@ export class KyselyInventoryRepository implements InventoryRepository {
           source_reference: input.sourceReference?.trim() || null,
           reason: input.reason.trim(),
           actor_user_id: user.id,
+          occurred_at: occurredAt,
           reversal_of_id: null,
         })
         .returning("id")
         .executeTakeFirstOrThrow()
+
+      await recordInventoryTracking(transaction, {
+        tenantId: user.tenantId,
+        productId: input.productId,
+        movementId: movement.id,
+        movementType: input.type,
+        quantity,
+        oldOnHand,
+        newOnHand,
+        reserved,
+        occurredAt,
+      })
 
       const currentRoundedCost = product.current_cost_cents
       const nextRoundedCost = roundedAverageCost === null
