@@ -315,7 +315,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
           updated_by: user.id,
           archived_at: null,
         })
-        .returning("id")
+        .returning(["id", "created_at"])
         .executeTakeFirstOrThrow()
 
       await insertAudit(transaction, user, "category.created", "category", row.id, null, {
@@ -664,7 +664,7 @@ export class KyselyCatalogRepository implements CatalogRepository {
           updated_by: user.id,
           archived_at: null,
         })
-        .returning("id")
+        .returning(["id", "created_at"])
         .executeTakeFirstOrThrow()
 
       await transaction.insertInto("product_price_history").values({
@@ -696,6 +696,17 @@ export class KyselyCatalogRepository implements CatalogRepository {
           reserved: 0,
           average_unit_cost_cents: null,
         }).execute()
+        if (values.active) {
+          await transaction.insertInto("stockout_intervals").values({
+            tenant_id: user.tenantId,
+            product_id: row.id,
+            started_at: row.created_at,
+            ended_at: null,
+            detected_reason: "product_created_without_stock",
+            source_movement_id: null,
+            ended_by_movement_id: null,
+          }).execute()
+        }
       }
 
       await insertAudit(transaction, user, "product.created", "product", row.id, null, values)
@@ -752,6 +763,34 @@ export class KyselyCatalogRepository implements CatalogRepository {
         .executeTakeFirst()
 
       if (!row) return false
+
+      if (before.active !== values.active && before.type !== "service") {
+        if (values.active) {
+          const balance = await transaction.selectFrom("inventory_balances")
+            .select("on_hand").where("tenant_id", "=", user.tenantId)
+            .where("product_id", "=", id).executeTakeFirstOrThrow()
+          if (Number(balance.on_hand) <= 0) {
+            await transaction.insertInto("stockout_intervals").values({
+              tenant_id: user.tenantId,
+              product_id: id,
+              started_at: new Date(),
+              ended_at: null,
+              detected_reason: "product_activated_without_stock",
+              source_movement_id: null,
+              ended_by_movement_id: null,
+            }).onConflict((conflict) => conflict
+              .columns(["tenant_id", "product_id"])
+              .where("ended_at", "is", null)
+              .doNothing())
+              .execute()
+          }
+        } else {
+          await transaction.updateTable("stockout_intervals").set({
+            ended_at: new Date(),
+          }).where("tenant_id", "=", user.tenantId).where("product_id", "=", id)
+            .where("ended_at", "is", null).execute()
+        }
+      }
 
       if (priceChanged) {
         await transaction.insertInto("product_price_history").values({
@@ -817,6 +856,10 @@ export class KyselyCatalogRepository implements CatalogRepository {
         .executeTakeFirst()
 
       if (!row) return false
+      await transaction.updateTable("stockout_intervals").set({
+        ended_at: new Date(),
+      }).where("tenant_id", "=", user.tenantId).where("product_id", "=", id)
+        .where("ended_at", "is", null).execute()
       await insertAudit(transaction, user, "product.archived", "product", id, before, null)
       await insertOutbox(transaction, user.tenantId, "product.archived", id, {
         productId: id,

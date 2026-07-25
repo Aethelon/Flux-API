@@ -295,6 +295,370 @@ export interface InventoryDailySnapshotTable {
   updated_at: GeneratedTimestamp
 }
 
+export interface TenantSequenceTable {
+  tenant_id: string
+  sequence_name: string
+  current_value: ColumnType<string, number | string, number | string>
+  updated_at: GeneratedTimestamp
+}
+
+export interface CustomerTable {
+  id: Generated<string>
+  tenant_id: string
+  name: string
+  email: string | null
+  phone: string | null
+  notes: string
+  status: "active" | "inactive"
+  consent_at: NullableTimestamp
+  anonymized_at: NullableTimestamp
+  version: Generated<number>
+  created_by: string
+  updated_by: string
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+  archived_at: NullableTimestamp
+}
+
+export interface SupplierTable {
+  id: Generated<string>
+  tenant_id: string
+  legal_name: string
+  trade_name: string | null
+  tax_id: string | null
+  email: string | null
+  phone: string | null
+  contact_name: string | null
+  notes: string
+  active: boolean
+  version: Generated<number>
+  created_by: string
+  updated_by: string
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+  archived_at: NullableTimestamp
+}
+
+export interface ProductSupplierTable {
+  id: Generated<string>
+  tenant_id: string
+  supplier_id: string
+  product_id: string
+  supplier_sku: string | null
+  active: boolean
+  lead_time_days: number
+  minimum_order_quantity: ColumnType<string, number | string, never>
+  pack_multiple: ColumnType<string, number | string, never>
+  valid_from: GeneratedTimestamp
+  valid_until: NullableTimestamp
+  created_by: string
+  created_at: GeneratedTimestamp
+}
+
+export interface PurchaseOrderTable {
+  id: Generated<string>
+  tenant_id: string
+  business_number: ColumnType<string, number | string, never>
+  supplier_id: string
+  status: "draft" | "submitted" | "partially_received" | "received" | "cancelled"
+  ordered_at: NullableTimestamp
+  expected_at: NullableTimestamp
+  created_by: string
+  approved_by: string | null
+  approved_at: NullableTimestamp
+  cancellation_reason: string | null
+  recommendation_id: string | null
+  notes: string
+  version: Generated<number>
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
+export interface PurchaseOrderItemTable {
+  id: Generated<string>
+  tenant_id: string
+  purchase_order_id: string
+  product_id: string
+  product_name_snapshot: string
+  unit_abbreviation_snapshot: string
+  ordered_quantity: ColumnType<string, number | string, never>
+  received_quantity: ColumnType<string, number | string, number | string>
+  agreed_unit_cost_cents: ColumnType<string, number | string, never>
+  supplier_sku_snapshot: string | null
+  pack_multiple_snapshot: ColumnType<string, number | string, never>
+  minimum_order_quantity_snapshot: ColumnType<string, number | string, never>
+  created_at: GeneratedTimestamp
+}
+
+export interface GoodsReceiptTable {
+  id: Generated<string>
+  tenant_id: string
+  business_number: ColumnType<string, number | string, never>
+  purchase_order_id: string
+  status: "completed" | "reversed"
+  supplier_document_reference: string | null
+  received_by: string
+  received_at: GeneratedTimestamp
+  reversed_by: string | null
+  reversed_at: NullableTimestamp
+  reversal_reason: string | null
+  created_at: GeneratedTimestamp
+}
+
+export interface GoodsReceiptItemTable {
+  id: Generated<string>
+  tenant_id: string
+  goods_receipt_id: string
+  purchase_order_item_id: string
+  product_id: string
+  received_quantity: ColumnType<string, number | string, never>
+  accepted_unit_cost_cents: ColumnType<string, number | string, never>
+  lot_reference: string | null
+  stock_movement_id: string
+  created_at: GeneratedTimestamp
+}
+
+export type PaymentMethod = "cash" | "credit" | "debit" | "pix"
+
+export interface CashRegisterTable {
+  id: Generated<string>
+  tenant_id: string
+  code: string
+  name: string
+  active: boolean
+  version: Generated<number>
+  created_by: string
+  updated_by: string
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+  archived_at: NullableTimestamp
+}
+
+export interface CashRegisterAssignmentTable {
+  id: Generated<string>
+  tenant_id: string
+  user_id: string
+  cash_register_id: string
+  valid_from: GeneratedTimestamp
+  valid_until: NullableTimestamp
+  assigned_by: string
+  reason: string
+  created_at: GeneratedTimestamp
+}
+
+export interface CashSessionTable {
+  id: Generated<string>
+  tenant_id: string
+  cash_register_id: string
+  opening_operator_id: string
+  opened_at: GeneratedTimestamp
+  opening_amount_cents: ColumnType<string, number | string, never>
+  status: "open" | "closed"
+  closing_operator_id: string | null
+  closed_at: NullableTimestamp
+  closing_note: string | null
+  version: Generated<number>
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
+export interface CashMovementTable {
+  id: Generated<string>
+  tenant_id: string
+  cash_session_id: string
+  movement_type:
+    | "opening"
+    | "sale"
+    | "sale_reversal"
+    | "return"
+    | "supply"
+    | "withdrawal"
+    | "closing_adjustment"
+  payment_method: PaymentMethod
+  amount_cents: ColumnType<string, number | string, never>
+  source_type: string
+  source_id: string | null
+  actor_user_id: string
+  reason: string
+  occurred_at: GeneratedTimestamp
+  reversal_of_id: string | null
+  created_at: GeneratedTimestamp
+}
+
+export interface CashCloseCountTable {
+  id: Generated<string>
+  tenant_id: string
+  cash_session_id: string
+  payment_method: PaymentMethod
+  expected_amount_cents: ColumnType<string, number | string, never>
+  counted_amount_cents: ColumnType<string, number | string, never>
+  difference_cents: ColumnType<string, number | string, never>
+  actor_user_id: string
+  counted_at: GeneratedTimestamp
+}
+
+export type SaleStatus = "completed" | "partially_returned" | "returned" | "cancelled"
+
+export interface SaleTable {
+  id: Generated<string>
+  tenant_id: string
+  business_number: ColumnType<string, number | string, never>
+  status: SaleStatus
+  customer_id: string | null
+  customer_name_snapshot: string | null
+  operator_id: string
+  cash_session_id: string
+  gross_amount_cents: ColumnType<string, number | string, never>
+  discount_amount_cents: ColumnType<string, number | string, never>
+  net_amount_cents: ColumnType<string, number | string, never>
+  returned_amount_cents: ColumnType<string, number | string, number | string>
+  change_amount_cents: ColumnType<string, number | string, never>
+  business_date: ColumnType<string, string, never>
+  completed_at: GeneratedTimestamp
+  cancelled_by: string | null
+  cancelled_at: NullableTimestamp
+  cancellation_reason: string | null
+  version: Generated<number>
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
+export interface SaleItemTable {
+  id: Generated<string>
+  tenant_id: string
+  sale_id: string
+  product_id: string | null
+  product_name_snapshot: string
+  product_type_snapshot: ProductType
+  unit_abbreviation_snapshot: string
+  quantity: ColumnType<string, number | string, never>
+  unit_price_cents: number
+  gross_amount_cents: ColumnType<string, number | string, never>
+  allocated_discount_cents: ColumnType<string, number | string, never>
+  net_amount_cents: ColumnType<string, number | string, never>
+  unit_cost_snapshot_cents: ColumnType<
+    string | null,
+    number | string | null,
+    never
+  >
+  returned_quantity: ColumnType<string, number | string, number | string>
+  returned_net_amount_cents: ColumnType<string, number | string, number | string>
+  service_order_id: string | null
+  service_order_previous_column_id: string | null
+  created_at: GeneratedTimestamp
+}
+
+export interface PaymentTable {
+  id: Generated<string>
+  tenant_id: string
+  sale_id: string
+  payment_method: PaymentMethod
+  amount_cents: ColumnType<string, number | string, never>
+  effective_amount_cents: ColumnType<string, number | string, never>
+  installments: number | null
+  status: "completed" | "reversed" | "partially_refunded" | "refunded"
+  external_reference: string | null
+  created_at: GeneratedTimestamp
+}
+
+export interface SaleReturnTable {
+  id: Generated<string>
+  tenant_id: string
+  business_number: ColumnType<string, number | string, never>
+  sale_id: string
+  operator_id: string
+  cash_session_id: string
+  reason: string
+  total_amount_cents: ColumnType<string, number | string, never>
+  status: "completed"
+  completed_at: GeneratedTimestamp
+  created_at: GeneratedTimestamp
+}
+
+export interface SaleReturnItemTable {
+  id: Generated<string>
+  tenant_id: string
+  return_id: string
+  sale_item_id: string
+  quantity: ColumnType<string, number | string, never>
+  amount_cents: ColumnType<string, number | string, never>
+  restock: boolean
+  unit_cost_snapshot_cents: ColumnType<
+    string | null,
+    number | string | null,
+    never
+  >
+  stock_movement_id: string | null
+  created_at: GeneratedTimestamp
+}
+
+export interface SaleReturnRefundTable {
+  id: Generated<string>
+  tenant_id: string
+  return_id: string
+  payment_method: PaymentMethod
+  amount_cents: ColumnType<string, number | string, never>
+  external_reference: string | null
+  created_at: GeneratedTimestamp
+}
+
+export type ServiceOrderStatus = "open" | "completed" | "cancelled"
+
+export interface ServiceOrderColumnTable {
+  id: Generated<string>
+  tenant_id: string
+  label: string
+  semantic_type: ServiceOrderStatus
+  color_token: string
+  display_position: number
+  protected: boolean
+  version: Generated<number>
+  created_by: string
+  updated_by: string
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+  archived_at: NullableTimestamp
+}
+
+export interface ServiceOrderTable {
+  id: Generated<string>
+  tenant_id: string
+  business_number: ColumnType<string, number | string, never>
+  customer_id: string
+  customer_name_snapshot: string
+  title: string
+  description: string
+  priority: "low" | "medium" | "high"
+  due_at: NullableTimestamp
+  estimated_value_cents: ColumnType<string, number | string, number | string>
+  final_sale_id: string | null
+  current_column_id: string
+  current_status: ServiceOrderStatus
+  responsible_user_id: string | null
+  completed_at: NullableTimestamp
+  cancelled_at: NullableTimestamp
+  version: Generated<number>
+  created_by: string
+  updated_by: string
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+}
+
+export interface ServiceOrderStatusHistoryTable {
+  id: Generated<string>
+  tenant_id: string
+  service_order_id: string
+  previous_column_id: string | null
+  new_column_id: string
+  previous_status: ServiceOrderStatus | null
+  new_status: ServiceOrderStatus
+  actor_user_id: string
+  occurred_at: GeneratedTimestamp
+  reason: string
+  metadata: JsonValue | null
+  created_at: GeneratedTimestamp
+}
+
 export interface Database {
   tenants: TenantTable
   tenant_settings: TenantSettingsTable
@@ -314,4 +678,26 @@ export interface Database {
   stock_count_items: StockCountItemTable
   stockout_intervals: StockoutIntervalTable
   inventory_daily_snapshots: InventoryDailySnapshotTable
+  tenant_sequences: TenantSequenceTable
+  customers: CustomerTable
+  suppliers: SupplierTable
+  product_suppliers: ProductSupplierTable
+  purchase_orders: PurchaseOrderTable
+  purchase_order_items: PurchaseOrderItemTable
+  goods_receipts: GoodsReceiptTable
+  goods_receipt_items: GoodsReceiptItemTable
+  cash_registers: CashRegisterTable
+  cash_register_assignments: CashRegisterAssignmentTable
+  cash_sessions: CashSessionTable
+  cash_movements: CashMovementTable
+  cash_close_counts: CashCloseCountTable
+  sales: SaleTable
+  sale_items: SaleItemTable
+  payments: PaymentTable
+  sale_returns: SaleReturnTable
+  sale_return_items: SaleReturnItemTable
+  sale_return_refunds: SaleReturnRefundTable
+  service_order_columns: ServiceOrderColumnTable
+  service_orders: ServiceOrderTable
+  service_order_status_history: ServiceOrderStatusHistoryTable
 }

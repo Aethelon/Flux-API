@@ -44,6 +44,22 @@ export function registerErrorHandler(app: FastifyInstance): void {
       })
     }
 
+    if (error.code === "23505") {
+      return reply.status(409).send({
+        code: "RESOURCE_CONFLICT",
+        message: "The resource conflicts with existing data.",
+        requestId: request.id,
+      })
+    }
+
+    if (error.code === "23503") {
+      return reply.status(409).send({
+        code: "RESOURCE_IN_USE",
+        message: "The resource is referenced by existing business data.",
+        requestId: request.id,
+      })
+    }
+
     if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
       return reply.status(error.statusCode).send({
         code: error.code || "REQUEST_ERROR",
