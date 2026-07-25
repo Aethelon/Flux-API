@@ -27,6 +27,7 @@ import { registerDashboardModule } from "./modules/dashboard/register.js"
 import { registerAuditModule } from "./modules/audit/register.js"
 import { registerExportModule } from "./modules/exports/register.js"
 import { registerIntelligenceModule } from "./modules/intelligence/register.js"
+import { registerAiModule } from "./modules/ai/register.js"
 
 interface BuildAppOptions {
   config?: AppConfig
@@ -107,6 +108,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerAuditModule(app)
   registerExportModule(app)
   registerIntelligenceModule(app)
+  registerAiModule(app)
   void app.register(healthRoutes, { prefix: "/api/v1/health" })
 
   return app

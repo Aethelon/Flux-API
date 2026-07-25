@@ -6,13 +6,17 @@ import {
   processPendingExports,
 } from "./modules/exports/export-job.js"
 import { processPendingAnalytics } from "./modules/intelligence/analytics-job.js"
+import { processPendingAi } from "./modules/ai/ai-job.js"
+import { createAiProvider } from "./modules/ai/providers.js"
 
 const config = loadConfig()
 const database = createDatabase(config)
+const aiProvider = createAiProvider(config)
 let stopping = false
 let snapshotRunning = false
 let exportRunning = false
 let analyticsRunning = false
+let aiRunning = false
 
 async function runSnapshotClosure(): Promise<void> {
   if (snapshotRunning || stopping) return
@@ -60,6 +64,21 @@ async function runAnalytics(): Promise<void> {
   }
 }
 
+async function runAi(): Promise<void> {
+  if (aiRunning || stopping) return
+  aiRunning = true
+  try {
+    const processed = await processPendingAi(database, config, 2, aiProvider)
+    if (processed > 0) {
+      console.info(`Processed ${String(processed)} AI jobs.`)
+    }
+  } catch (error) {
+    console.error("AI insight processing failed.", error)
+  } finally {
+    aiRunning = false
+  }
+}
+
 const snapshotTimer = setInterval(() => {
   void runSnapshotClosure()
 }, 60_000)
@@ -72,12 +91,17 @@ const analyticsTimer = setInterval(() => {
   void runAnalytics()
 }, 5_000)
 
+const aiTimer = setInterval(() => {
+  void runAi()
+}, 5_000)
+
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return
   stopping = true
   clearInterval(snapshotTimer)
   clearInterval(exportTimer)
   clearInterval(analyticsTimer)
+  clearInterval(aiTimer)
   console.info(`Flux worker stopping after ${signal}.`)
   await database.destroy()
 }
@@ -93,4 +117,5 @@ process.once("SIGTERM", () => {
 void runSnapshotClosure()
 void runExports()
 void runAnalytics()
+void runAi()
 console.info("Flux worker ready.")

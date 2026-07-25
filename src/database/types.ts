@@ -54,6 +54,9 @@ export interface TenantSettingsTable {
   promotion_cap: Generated<string>
   promotion_coefficient: Generated<string>
   minimum_gross_margin: Generated<string>
+  ai_enabled: Generated<boolean>
+  ai_daily_token_budget: Generated<number>
+  ai_daily_cost_budget_micro_usd: Generated<string>
   created_at: GeneratedTimestamp
   updated_at: GeneratedTimestamp
 }
@@ -686,7 +689,7 @@ export type JobStatus = "pending" | "processing" | "completed" | "failed"
 export interface JobRunTable {
   id: Generated<string>
   tenant_id: string
-  job_type: "export" | "analytics"
+  job_type: "export" | "analytics" | "ai"
   status: JobStatus
   requested_by: string
   parameters: JsonValue
@@ -832,6 +835,68 @@ export interface RecommendationTable {
   created_at: GeneratedTimestamp
 }
 
+export type AiProviderName = "gemini" | "anthropic"
+export type AiRunStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "cached"
+  | "rejected"
+  | "failed"
+  | "budget_exceeded"
+
+export interface AiRunTable {
+  id: Generated<string>
+  tenant_id: string
+  job_run_id: string
+  provider: AiProviderName
+  model_id: string
+  prompt_version: string
+  schema_version: string
+  policy_version: string
+  input_hash: string
+  source_snapshot_ids: JsonValue
+  sanitized_input: JsonValue
+  structured_output: JsonValue | null
+  status: AiRunStatus
+  validation_outcome: "pending" | "accepted" | "rejected" | "not_run"
+  rejection_reasons: JsonValue
+  provider_request_id: string | null
+  input_tokens: number | null
+  output_tokens: number | null
+  latency_ms: number | null
+  estimated_cost_micro_usd: ColumnType<
+    string | null,
+    number | string | null,
+    number | string | null
+  >
+  retry_count: Generated<number>
+  cache_source_run_id: string | null
+  error_class: string | null
+  error_message: string | null
+  created_by: string
+  created_at: GeneratedTimestamp
+  started_at: NullableTimestamp
+  finished_at: NullableTimestamp
+}
+
+export interface AiInsightTable {
+  id: Generated<string>
+  tenant_id: string
+  ai_run_id: string
+  insight_type: "summary" | "strength" | "risk" | "recommendation"
+  text: string
+  severity: "low" | "medium" | "high" | null
+  source_metric_ids: JsonValue
+  display_order: number
+  requires_human_review: boolean
+  state: "pending" | "accepted" | "rejected"
+  reviewer_id: string | null
+  reviewed_at: NullableTimestamp
+  review_reason: string | null
+  created_at: GeneratedTimestamp
+}
+
 export interface ExportArtifactTable {
   id: Generated<string>
   tenant_id: string
@@ -895,4 +960,6 @@ export interface Database {
   forecast_backtests: ForecastBacktestTable
   recommendation_runs: RecommendationRunTable
   recommendations: RecommendationTable
+  ai_runs: AiRunTable
+  ai_insights: AiInsightTable
 }

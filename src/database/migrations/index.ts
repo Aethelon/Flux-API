@@ -13,6 +13,7 @@ import { zeroValueReturnsMigration } from "./011-zero-value-returns.js"
 import { historyDashboardExportsMigration } from "./012-history-dashboard-exports.js"
 import { deterministicIntelligenceMigration } from "./013-deterministic-intelligence.js"
 import { intelligenceHardeningMigration } from "./014-intelligence-hardening.js"
+import { aiExplanationMigration } from "./015-ai-explanation.js"
 
 const migrations: Record<string, Migration> = {
   "001-foundation": foundationMigration,
@@ -29,6 +30,7 @@ const migrations: Record<string, Migration> = {
   "012-history-dashboard-exports": historyDashboardExportsMigration,
   "013-deterministic-intelligence": deterministicIntelligenceMigration,
   "014-intelligence-hardening": intelligenceHardeningMigration,
+  "015-ai-explanation": aiExplanationMigration,
 }
 
 export const migrationProvider: MigrationProvider = {

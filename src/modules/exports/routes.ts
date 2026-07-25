@@ -4,6 +4,7 @@ import { ErrorResponseSchema } from "../../shared/http/schemas.js"
 import { AppError } from "../../shared/errors/app-error.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import { AnalyticsJobSchema } from "../intelligence/schemas.js"
+import { AiJobSchema } from "../ai/schemas.js"
 import {
   CreateExportBodySchema,
   ExportJobSchema,
@@ -87,7 +88,7 @@ export const exportRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
       security: [{ bearerAuth: [] }],
       params: IdParamsSchema,
       response: {
-        200: Type.Union([ExportJobSchema, AnalyticsJobSchema]),
+        200: Type.Union([ExportJobSchema, AnalyticsJobSchema, AiJobSchema]),
         401: ErrorResponseSchema,
         403: ErrorResponseSchema,
         404: ErrorResponseSchema,
@@ -100,9 +101,13 @@ export const exportRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
       .where("id", "=", request.params.id)
       .executeTakeFirst()
     if (!job) throw new AppError(404, "JOB_NOT_FOUND", "Job was not found.")
-    return job.job_type === "analytics"
-      ? app.intelligenceService.getJob(authenticated, request.params.id)
-      : app.exportService.get(authenticated, request.params.id)
+    if (job.job_type === "analytics") {
+      return app.intelligenceService.getJob(authenticated, request.params.id)
+    }
+    if (job.job_type === "ai") {
+      return app.aiService.getJob(authenticated, request.params.id)
+    }
+    return app.exportService.get(authenticated, request.params.id)
   })
 
   done()
