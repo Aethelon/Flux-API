@@ -11,6 +11,7 @@ import {
   saveEntityIdempotency,
 } from "../../shared/persistence/commands.js"
 import type { AuthenticatedUser } from "../auth/types.js"
+import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type {
   AiInsight,
   AiJob,
@@ -165,6 +166,7 @@ export class KyselyAiRepository implements AiRepository {
         error_message: null,
         started_at: null,
         finished_at: null,
+        correlation_id: currentCorrelationId(),
       }).returning("id").executeTakeFirstOrThrow()
       const run = await transaction.insertInto("ai_runs").values({
         tenant_id: user.tenantId,

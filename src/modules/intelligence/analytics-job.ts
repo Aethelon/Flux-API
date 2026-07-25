@@ -9,6 +9,7 @@ interface ClaimedJob {
   tenant_id: string
   requested_by: string
   parameters: unknown
+  correlation_id: string | null
 }
 
 function parameters(value: unknown): Record<string, unknown> {
@@ -21,7 +22,7 @@ function parameters(value: unknown): Record<string, unknown> {
 async function claim(database: Kysely<Database>): Promise<ClaimedJob | null> {
   return database.transaction().execute(async (transaction) => {
     const row = await transaction.selectFrom("job_runs").select([
-      "id", "tenant_id", "requested_by", "parameters",
+      "id", "tenant_id", "requested_by", "parameters", "correlation_id",
     ]).where("job_type", "=", "analytics")
       .where("available_at", "<=", new Date())
       .where((expression) => expression.or([
@@ -97,8 +98,8 @@ async function complete(
       action: "analytics.completed",
       entity_type: "job_run",
       entity_id: job.id,
-      request_id: null,
-      correlation_id: null,
+      request_id: job.correlation_id,
+      correlation_id: job.correlation_id,
       source: "worker",
       reason: null,
       before_json: null,
@@ -135,8 +136,8 @@ async function fail(
       action: "analytics.failed",
       entity_type: "job_run",
       entity_id: job.id,
-      request_id: null,
-      correlation_id: null,
+      request_id: job.correlation_id,
+      correlation_id: job.correlation_id,
       source: "worker",
       reason: code,
       before_json: null,

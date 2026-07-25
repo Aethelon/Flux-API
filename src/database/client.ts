@@ -9,6 +9,10 @@ export function createDatabase(config: AppConfig): Kysely<Database> {
       pool: new Pool({
         connectionString: config.databaseUrl,
         max: config.databasePoolMax,
+        connectionTimeoutMillis: config.databaseConnectionTimeoutMs,
+        statement_timeout: config.databaseStatementTimeoutMs,
+        idle_in_transaction_session_timeout: config.databaseIdleTransactionTimeoutMs,
+        application_name: "flux-api",
       }),
     }),
   })

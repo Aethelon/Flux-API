@@ -56,7 +56,7 @@ export const healthRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
         return reply.status(503).send({
           code: "SERVICE_UNAVAILABLE",
           message: "The database is unavailable.",
-          requestId: request.id,
+          requestId: request.correlationId || request.id,
         })
       }
     },

@@ -1,5 +1,6 @@
 import { sql, type Kysely } from "kysely"
 import type { Database, ProductType } from "../../database/types.js"
+import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import type {
   Category,
@@ -227,6 +228,7 @@ async function insertAudit(
   before: unknown,
   after: unknown,
 ): Promise<void> {
+  const correlationId = currentCorrelationId()
   await database
     .insertInto("audit_events")
     .values({
@@ -236,8 +238,8 @@ async function insertAudit(
       action,
       entity_type: entityType,
       entity_id: entityId,
-      request_id: null,
-      correlation_id: null,
+      request_id: correlationId,
+      correlation_id: correlationId,
       source: "api",
       reason: null,
       before_json: before,
@@ -255,6 +257,7 @@ async function insertOutbox(
   aggregateId: string,
   payload: unknown,
 ): Promise<void> {
+  const correlationId = currentCorrelationId()
   await database
     .insertInto("outbox_events")
     .values({
@@ -262,6 +265,7 @@ async function insertOutbox(
       event_type: eventType,
       aggregate_type: "product",
       aggregate_id: aggregateId,
+      correlation_id: correlationId,
       payload,
       status: "pending",
       last_error: null,

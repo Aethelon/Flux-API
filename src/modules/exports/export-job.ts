@@ -20,6 +20,7 @@ interface ClaimedJob {
   tenant_id: string
   requested_by: string
   parameters: unknown
+  correlation_id: string | null
 }
 
 interface Requester {
@@ -292,7 +293,7 @@ async function generate(
 async function claim(database: Kysely<Database>): Promise<ClaimedJob | null> {
   return database.transaction().execute(async (transaction) => {
     const row = await transaction.selectFrom("job_runs")
-      .select(["id", "tenant_id", "requested_by", "parameters"])
+      .select(["id", "tenant_id", "requested_by", "parameters", "correlation_id"])
       .where("job_type", "=", "export")
       .where("available_at", "<=", new Date())
       .where((expression) => expression.or([
@@ -365,8 +366,8 @@ async function complete(
       action: "export.completed",
       entity_type: "job_run",
       entity_id: job.id,
-      request_id: null,
-      correlation_id: null,
+      request_id: job.correlation_id,
+      correlation_id: job.correlation_id,
       source: "worker",
       reason: null,
       before_json: null,
@@ -405,8 +406,8 @@ async function fail(
       action: "export.failed",
       entity_type: "job_run",
       entity_id: job.id,
-      request_id: null,
-      correlation_id: null,
+      request_id: job.correlation_id,
+      correlation_id: job.correlation_id,
       source: "worker",
       reason: errorCode,
       before_json: null,

@@ -12,6 +12,9 @@ or modifying the source database.
 
 ## Procedure
 
+The automated form of this procedure is `scripts/verify-backup-restore.sh`. The
+configured initial objectives are RPO 24 hours and RTO 60 minutes.
+
 1. Create a custom-format backup from the source database:
 
    ```sh
@@ -46,7 +49,7 @@ or modifying the source database.
 6. Run the application integration tests against the restored database.
 
 7. Record the backup time, restore duration, restored migration, compared row counts,
-   result, and operator in the operational restore-test log.
+   result, and operator in `backup_restore_checks` and the operational log.
 
 8. Drop only the separate validation database and securely remove the temporary dump
    after verification.

@@ -27,6 +27,7 @@ The API listens on `http://localhost:3333` by default.
 - Current user: `GET /api/v1/auth/me`
 - Logout: `POST /api/v1/auth/logout`
 - OpenAPI UI: `GET /documentation`
+- Metrics: `GET /api/v1/monitoring/metrics` with the monitoring bearer token
 
 ## First D'lara administrator
 
@@ -43,6 +44,13 @@ The password must contain at least 12 characters. Then run:
 ```bash
 npm run db:seed:admin
 ```
+
+Production hardening and recovery procedures are documented in
+[docs/operations-runbook.md](./docs/operations-runbook.md),
+[docs/security-deployment.md](./docs/security-deployment.md), and
+[docs/backup-restore.md](./docs/backup-restore.md). The current frontend integration
+status is tracked in
+[docs/frontend-readiness.md](./docs/frontend-readiness.md).
 
 The seed is idempotent and does not replace the password of an existing account.
 

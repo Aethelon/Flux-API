@@ -8,6 +8,7 @@ import {
 import { processPendingAnalytics } from "./modules/intelligence/analytics-job.js"
 import { processPendingAi } from "./modules/ai/ai-job.js"
 import { createAiProvider } from "./modules/ai/providers.js"
+import { runHousekeeping } from "./shared/persistence/housekeeping-job.js"
 
 const config = loadConfig()
 const database = createDatabase(config)
@@ -17,6 +18,7 @@ let snapshotRunning = false
 let exportRunning = false
 let analyticsRunning = false
 let aiRunning = false
+let housekeepingRunning = false
 
 async function runSnapshotClosure(): Promise<void> {
   if (snapshotRunning || stopping) return
@@ -79,6 +81,24 @@ async function runAi(): Promise<void> {
   }
 }
 
+async function runMaintenance(): Promise<void> {
+  if (housekeepingRunning || stopping) return
+  housekeepingRunning = true
+  try {
+    const result = await runHousekeeping(database, config)
+    const removed = result.idempotencyRecords
+      + result.outboxEvents
+      + result.authSessions
+    if (removed > 0) {
+      console.info(`Removed ${String(removed)} expired infrastructure records.`)
+    }
+  } catch (error) {
+    console.error("Infrastructure housekeeping failed.", error)
+  } finally {
+    housekeepingRunning = false
+  }
+}
+
 const snapshotTimer = setInterval(() => {
   void runSnapshotClosure()
 }, 60_000)
@@ -95,6 +115,10 @@ const aiTimer = setInterval(() => {
   void runAi()
 }, 5_000)
 
+const housekeepingTimer = setInterval(() => {
+  void runMaintenance()
+}, 60 * 60 * 1_000)
+
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return
   stopping = true
@@ -102,6 +126,7 @@ async function shutdown(signal: string): Promise<void> {
   clearInterval(exportTimer)
   clearInterval(analyticsTimer)
   clearInterval(aiTimer)
+  clearInterval(housekeepingTimer)
   console.info(`Flux worker stopping after ${signal}.`)
   await database.destroy()
 }
@@ -118,4 +143,5 @@ void runSnapshotClosure()
 void runExports()
 void runAnalytics()
 void runAi()
+void runMaintenance()
 console.info("Flux worker ready.")

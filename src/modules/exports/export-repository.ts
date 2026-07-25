@@ -6,6 +6,7 @@ import {
   saveEntityIdempotency,
 } from "../../shared/persistence/commands.js"
 import type { AuthenticatedUser } from "../auth/types.js"
+import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type { CreateExportInput, ExportArtifact, ExportJob } from "./types.js"
 
 interface ExportJobRow {
@@ -98,6 +99,7 @@ export class KyselyExportRepository implements ExportRepository {
         error_message: null,
         started_at: null,
         finished_at: null,
+        correlation_id: currentCorrelationId(),
       }).returning("id").executeTakeFirstOrThrow()
       await recordDomainEvent(transaction, user, {
         action: "export.requested",

@@ -10,6 +10,7 @@ import {
   saveEntityIdempotency,
 } from "../../shared/persistence/commands.js"
 import type { AuthenticatedUser } from "../auth/types.js"
+import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type {
   AnalyticsJob,
   ForecastRun,
@@ -103,6 +104,7 @@ export class KyselyIntelligenceRepository implements IntelligenceRepository {
         error_message: null,
         started_at: null,
         finished_at: null,
+        correlation_id: currentCorrelationId(),
       }).returning("id").executeTakeFirstOrThrow()
       await recordDomainEvent(transaction, user, {
         action: "analytics.requested",

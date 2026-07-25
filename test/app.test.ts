@@ -29,6 +29,30 @@ void describe("HTTP foundation", () => {
     assert.equal(response.json<{ status: string }>().status, "ok")
   })
 
+  void it("propagates a valid request correlation identifier", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/health/live",
+      headers: {
+        "x-request-id": "phase-five-correlation-001",
+      },
+    })
+
+    assert.equal(response.headers["x-request-id"], "phase-five-correlation-001")
+  })
+
+  void it("replaces an invalid request correlation identifier", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/health/live",
+      headers: {
+        "x-request-id": "invalid request identifier",
+      },
+    })
+
+    assert.match(String(response.headers["x-request-id"]), /^[0-9a-f-]{36}$/)
+  })
+
   void it("rejects an invalid login body before database access", async () => {
     const response = await app.inject({
       method: "POST",
@@ -47,6 +71,19 @@ void describe("HTTP foundation", () => {
     const response = await app.inject({
       method: "GET",
       url: "/api/v1/auth/me",
+    })
+
+    assert.equal(response.statusCode, 401)
+    assert.equal(response.json<{ code: string }>().code, "UNAUTHORIZED")
+  })
+
+  void it("protects the monitoring endpoint", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/monitoring/metrics",
+      headers: {
+        authorization: "Bearer wrong-token",
+      },
     })
 
     assert.equal(response.statusCode, 401)

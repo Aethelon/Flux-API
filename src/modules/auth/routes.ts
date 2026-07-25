@@ -36,7 +36,7 @@ export const authRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
     async (request) => app.authService.login(request.body, {
       ipAddress: request.ip,
       userAgent: userAgent(request.headers["user-agent"]),
-      requestId: request.id,
+      requestId: request.correlationId,
     }),
   )
 
@@ -61,7 +61,7 @@ export const authRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
     async (request) => app.authService.refresh(request.body.refreshToken, {
       ipAddress: request.ip,
       userAgent: userAgent(request.headers["user-agent"]),
-      requestId: request.id,
+      requestId: request.correlationId,
     }),
   )
 
@@ -109,7 +109,7 @@ export const authRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
       const user = request.auth
       if (!user) throw new Error("Authentication hook did not set request.auth")
 
-      await app.authService.logout(user, request.id)
+      await app.authService.logout(user, request.correlationId)
       return reply.status(204).send(null)
     },
   )

@@ -124,6 +124,7 @@ export interface OutboxEventTable {
   created_at: GeneratedTimestamp
   processed_at: NullableTimestamp
   last_error: string | null
+  correlation_id: string | null
 }
 
 export interface IdempotencyRecordTable {
@@ -704,6 +705,26 @@ export interface JobRunTable {
   finished_at: NullableTimestamp
   created_at: GeneratedTimestamp
   updated_at: GeneratedTimestamp
+  correlation_id: string | null
+}
+
+export interface BackupRestoreCheckTable {
+  id: Generated<string>
+  status: "passed" | "failed"
+  source_database_hash: string
+  source_schema_version: string | null
+  restored_schema_version: string | null
+  row_counts_match: boolean
+  backup_started_at: Timestamp
+  restore_finished_at: Timestamp
+  restore_duration_ms: ColumnType<
+    string,
+    number | string,
+    number | string
+  >
+  error_class: string | null
+  details: JsonValue
+  created_at: GeneratedTimestamp
 }
 
 export interface BusinessCalendarEventTable {
@@ -962,4 +983,5 @@ export interface Database {
   recommendations: RecommendationTable
   ai_runs: AiRunTable
   ai_insights: AiInsightTable
+  backup_restore_checks: BackupRestoreCheckTable
 }

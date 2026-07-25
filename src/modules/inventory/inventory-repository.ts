@@ -6,6 +6,7 @@ import type {
 } from "../../database/types.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import { AppError } from "../../shared/errors/app-error.js"
+import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type {
   BalanceFilters,
   CreateManualMovementInput,
@@ -560,6 +561,7 @@ export class KyselyInventoryRepository implements InventoryRepository {
         unitCostSnapshotCents: costSnapshot,
         reason: input.reason.trim(),
       }
+      const correlationId = currentCorrelationId()
       await transaction.insertInto("audit_events").values({
         tenant_id: user.tenantId,
         actor_type: "user",
@@ -567,8 +569,8 @@ export class KyselyInventoryRepository implements InventoryRepository {
         action: "inventory.movement_posted",
         entity_type: "stock_movement",
         entity_id: movement.id,
-        request_id: null,
-        correlation_id: null,
+        request_id: correlationId,
+        correlation_id: correlationId,
         source: "api",
         reason: input.reason.trim(),
         before_json: null,
@@ -581,6 +583,7 @@ export class KyselyInventoryRepository implements InventoryRepository {
         event_type: "inventory.movement_posted",
         aggregate_type: "product",
         aggregate_id: input.productId,
+        correlation_id: correlationId,
         payload: eventPayload,
         status: "pending",
         last_error: null,

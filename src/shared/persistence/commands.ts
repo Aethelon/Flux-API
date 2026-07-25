@@ -2,6 +2,7 @@ import { sql, type Kysely } from "kysely"
 import type { Database } from "../../database/types.js"
 import type { AuthenticatedUser } from "../../modules/auth/types.js"
 import { AppError } from "../errors/app-error.js"
+import { currentCorrelationId } from "../observability/request-context.js"
 
 function responseEntityId(response: unknown): string | null {
   return typeof response === "object"
@@ -96,6 +97,7 @@ export async function recordDomainEvent(
     aggregateId?: string
   },
 ): Promise<void> {
+  const correlationId = currentCorrelationId()
   await database.insertInto("audit_events").values({
     tenant_id: user.tenantId,
     actor_type: "user",
@@ -103,8 +105,8 @@ export async function recordDomainEvent(
     action: input.action,
     entity_type: input.entityType,
     entity_id: input.entityId,
-    request_id: null,
-    correlation_id: null,
+    request_id: correlationId,
+    correlation_id: correlationId,
     source: "api",
     reason: input.reason ?? null,
     before_json: input.before ?? null,
@@ -122,5 +124,6 @@ export async function recordDomainEvent(
     status: "pending",
     last_error: null,
     processed_at: null,
+    correlation_id: correlationId,
   }).execute()
 }

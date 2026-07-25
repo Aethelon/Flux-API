@@ -32,6 +32,7 @@ interface ClaimedAiJob {
   schemaVersion: string
   policyVersion: string
   attempts: number
+  correlationId: string | null
 }
 
 function sanitizedInput(value: unknown): SanitizedAiInput {
@@ -53,6 +54,7 @@ async function claim(
         "job.id",
         "job.tenant_id",
         "job.attempts",
+        "job.correlation_id",
         "run.id as run_id",
         "run.provider",
         "run.model_id",
@@ -112,6 +114,7 @@ async function claim(
       schemaVersion: row.schema_version,
       policyVersion: row.policy_version,
       attempts: row.attempts + 1,
+      correlationId: row.correlation_id,
     }
   })
 }
@@ -210,8 +213,8 @@ async function cached(
       action: "ai.insights.cached",
       entity_type: "ai_run",
       entity_id: job.runId,
-      request_id: null,
-      correlation_id: null,
+      request_id: job.correlationId,
+      correlation_id: job.correlationId,
       source: "worker",
       reason: null,
       before_json: null,
@@ -394,7 +397,7 @@ async function completeGeneration(
         entity_type: "ai_run",
         entity_id: job.runId,
         request_id: result.providerRequestId,
-        correlation_id: null,
+        correlation_id: job.correlationId,
         source: "worker",
         reason: validation.reasons.join(","),
         before_json: null,
@@ -438,7 +441,7 @@ async function completeGeneration(
       entity_type: "ai_run",
       entity_id: job.runId,
       request_id: result.providerRequestId,
-      correlation_id: null,
+      correlation_id: job.correlationId,
       source: "worker",
       reason: null,
       before_json: null,
@@ -492,8 +495,8 @@ async function fail(
       action: "ai.insights.failed",
       entity_type: "ai_run",
       entity_id: job.runId,
-      request_id: null,
-      correlation_id: null,
+      request_id: job.correlationId,
+      correlation_id: job.correlationId,
       source: "worker",
       reason: code,
       before_json: null,

@@ -4,6 +4,7 @@ import type {
   StockCountStatus,
 } from "../../database/types.js"
 import { AppError } from "../../shared/errors/app-error.js"
+import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import { recordInventoryTracking } from "./inventory-tracking.js"
 import type {
@@ -206,6 +207,7 @@ async function insertCountEvent(
   reason: string,
   payload: unknown,
 ): Promise<void> {
+  const correlationId = currentCorrelationId()
   await database.insertInto("audit_events").values({
     tenant_id: user.tenantId,
     actor_type: "user",
@@ -213,8 +215,8 @@ async function insertCountEvent(
     action,
     entity_type: "stock_count",
     entity_id: countId,
-    request_id: null,
-    correlation_id: null,
+    request_id: correlationId,
+    correlation_id: correlationId,
     source: "api",
     reason,
     before_json: null,
@@ -228,6 +230,7 @@ async function insertCountEvent(
     event_type: action,
     aggregate_type: "stock_count",
     aggregate_id: countId,
+    correlation_id: correlationId,
     payload,
     status: "pending",
     last_error: null,

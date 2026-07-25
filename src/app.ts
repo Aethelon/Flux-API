@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import Fastify, { type FastifyInstance } from "fastify"
 import cors from "@fastify/cors"
 import helmet from "@fastify/helmet"
@@ -28,6 +29,8 @@ import { registerAuditModule } from "./modules/audit/register.js"
 import { registerExportModule } from "./modules/exports/register.js"
 import { registerIntelligenceModule } from "./modules/intelligence/register.js"
 import { registerAiModule } from "./modules/ai/register.js"
+import { registerMonitoringModule } from "./modules/monitoring/register.js"
+import { enterRequestContext } from "./shared/observability/request-context.js"
 
 interface BuildAppOptions {
   config?: AppConfig
@@ -39,6 +42,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const config = options.config ?? loadConfig()
   const database = options.database ?? createDatabase(config)
   const app = Fastify({
+    bodyLimit: config.httpBodyLimitBytes,
+    requestTimeout: config.httpRequestTimeoutMs,
     logger: (options.logger ?? config.nodeEnv !== "test")
       ? {
           level: config.logLevel,
@@ -60,6 +65,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.setValidatorCompiler(TypeBoxValidatorCompiler)
   app.decorate("config", config)
   app.decorate("db", database)
+  app.decorateRequest("correlationId", "")
+  app.decorateRequest("errorClass", null)
+  app.addHook("onRequest", (request, reply, done) => {
+    request.correlationId = /^[A-Za-z0-9._:-]{1,128}$/.test(request.id)
+      ? request.id : randomUUID()
+    enterRequestContext(request.correlationId)
+    void reply.header("x-request-id", request.correlationId)
+    done()
+  })
   app.addHook("onClose", async () => {
     await database.destroy()
   })
@@ -109,7 +123,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerExportModule(app)
   registerIntelligenceModule(app)
   registerAiModule(app)
+  registerMonitoringModule(app)
   void app.register(healthRoutes, { prefix: "/api/v1/health" })
+  app.addHook("onResponse", (request, reply, done) => {
+    const route = request.routeOptions.url || request.url.split("?")[0] || "unknown"
+    const durationMs = Math.max(0, reply.elapsedTime)
+    app.monitoringService.observeHttp(
+      route,
+      reply.statusCode,
+      durationMs,
+      request.errorClass,
+    )
+    request.log.info({
+      correlationId: request.correlationId,
+      tenantId: request.auth?.tenantId ?? null,
+      actorId: request.auth?.id ?? null,
+      route,
+      statusCode: reply.statusCode,
+      durationMs,
+      errorClass: request.errorClass,
+    }, "Request completed")
+    done()
+  })
 
   return app
 }

@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: flux
+          POSTGRES_USER: flux
+          POSTGRES_PASSWORD: flux
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flux -d flux"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 3333
+      LOG_LEVEL: silent
+      CORS_ORIGINS: http://localhost:3000
+      DATABASE_URL: postgres://flux:flux@127.0.0.1:5432/flux
+      DATABASE_POOL_MAX: 4
+      JWT_ACCESS_SECRET: test-secret-with-at-least-thirty-two-characters
+      JWT_ACCESS_TTL_SECONDS: 900
+      REFRESH_TOKEN_TTL_DAYS: 30
+      RUN_PHASE_ONE_INTEGRATION: 1
+      RUN_PHASE_TWO_INTEGRATION: 1
+      RUN_PHASE_THREE_INTEGRATION: 1
+      RUN_PHASE_FOUR_INTEGRATION: 1
+      RUN_PHASE_FIVE_INTEGRATION: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run check
