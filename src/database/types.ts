@@ -33,6 +33,27 @@ export interface TenantSettingsTable {
   tenant_id: string
   timezone: string
   currency: string
+  forecast_horizon: Generated<number>
+  forecast_training_buckets: Generated<number>
+  forecast_minimum_buckets: Generated<number>
+  forecast_preferred_buckets: Generated<number>
+  forecast_seasonal_cycle: Generated<number>
+  forecast_baseline_tolerance: Generated<string>
+  forecast_baseline_policy: Generated<"naive" | "reject">
+  forecast_confidence_coverage_weight: Generated<string>
+  forecast_confidence_accuracy_weight: Generated<string>
+  forecast_confidence_availability_weight: Generated<string>
+  forecast_confidence_high_threshold: Generated<string>
+  forecast_confidence_medium_threshold: Generated<string>
+  stockout_exclusion_rate: Generated<string>
+  service_level: Generated<string>
+  review_period_days: Generated<number>
+  demand_window_days: Generated<number>
+  promotion_overstock_threshold: Generated<string>
+  promotion_turnover_threshold: Generated<string>
+  promotion_cap: Generated<string>
+  promotion_coefficient: Generated<string>
+  minimum_gross_margin: Generated<string>
   created_at: GeneratedTimestamp
   updated_at: GeneratedTimestamp
 }
@@ -665,7 +686,7 @@ export type JobStatus = "pending" | "processing" | "completed" | "failed"
 export interface JobRunTable {
   id: Generated<string>
   tenant_id: string
-  job_type: "export"
+  job_type: "export" | "analytics"
   status: JobStatus
   requested_by: string
   parameters: JsonValue
@@ -680,6 +701,135 @@ export interface JobRunTable {
   finished_at: NullableTimestamp
   created_at: GeneratedTimestamp
   updated_at: GeneratedTimestamp
+}
+
+export interface BusinessCalendarEventTable {
+  id: Generated<string>
+  tenant_id: string
+  name: string
+  recurring_key: string | null
+  starts_on: ColumnType<string, string, never>
+  ends_on: ColumnType<string, string, never>
+  product_id: string | null
+  category_id: string | null
+  source: string
+  created_by: string
+  created_at: GeneratedTimestamp
+  archived_at: NullableTimestamp
+}
+
+export interface MetricSnapshotTable {
+  id: Generated<string>
+  tenant_id: string
+  metric_key: string
+  entity_type: string
+  entity_id: string | null
+  calculation_version: string
+  source_from: Timestamp
+  source_to: Timestamp
+  source_ids: JsonValue
+  configuration: JsonValue
+  inputs: JsonValue
+  result: JsonValue
+  completeness: JsonValue
+  generated_at: GeneratedTimestamp
+  published: boolean
+}
+
+export type ForecastTargetType = "product_demand" | "monthly_revenue"
+export type ForecastMethod =
+  | "ols_trend"
+  | "seasonal_ols"
+  | "naive_last_value"
+  | "unavailable"
+export type ForecastStatus =
+  | "completed"
+  | "insufficient_data"
+  | "poor_data_quality"
+  | "baseline_not_beaten"
+export type ConfidenceLabel = "high" | "medium" | "low" | "unavailable"
+
+export interface ForecastRunTable {
+  id: Generated<string>
+  tenant_id: string
+  target_type: ForecastTargetType
+  product_id: string | null
+  method: ForecastMethod
+  calculation_version: string
+  configuration: JsonValue
+  training_from: Timestamp
+  training_to: Timestamp
+  bucket_count: number
+  eligible_bucket_count: number
+  data_quality: JsonValue
+  model_metrics: JsonValue
+  baseline_metrics: JsonValue
+  confidence_score: ColumnType<string | null, number | string | null, never>
+  confidence_label: ConfidenceLabel
+  status: ForecastStatus
+  limitations: JsonValue
+  source_snapshot_ids: JsonValue
+  created_by: string
+  created_at: GeneratedTimestamp
+  published: boolean
+}
+
+export interface ForecastPointTable {
+  id: Generated<string>
+  tenant_id: string
+  forecast_run_id: string
+  bucket_start: ColumnType<string, string, never>
+  horizon: number
+  point_estimate: ColumnType<string, number | string, never>
+  lower_limit: ColumnType<string | null, number | string | null, never>
+  upper_limit: ColumnType<string | null, number | string | null, never>
+  seasonal_factor: ColumnType<string | null, number | string | null, never>
+  operational_value: ColumnType<string, number | string, never>
+  created_at: GeneratedTimestamp
+}
+
+export interface ForecastBacktestTable {
+  id: Generated<string>
+  tenant_id: string
+  forecast_run_id: string
+  origin_bucket: ColumnType<string, string, never>
+  horizon: number
+  actual: ColumnType<string, number | string, never>
+  predicted: ColumnType<string, number | string, never>
+  naive_predicted: ColumnType<string, number | string, never>
+  residual: ColumnType<string, number | string, never>
+  created_at: GeneratedTimestamp
+}
+
+export interface RecommendationRunTable {
+  id: Generated<string>
+  tenant_id: string
+  calculation_version: string
+  configuration: JsonValue
+  source_snapshot_ids: JsonValue
+  status: "completed" | "poor_data_quality" | "insufficient_data"
+  counts: JsonValue
+  created_by: string
+  created_at: GeneratedTimestamp
+}
+
+export type RecommendationType = "replenishment" | "promotion" | "overstock_review"
+
+export interface RecommendationTable {
+  id: Generated<string>
+  tenant_id: string
+  recommendation_run_id: string
+  recommendation_type: RecommendationType
+  product_id: string
+  evidence_metrics: JsonValue
+  proposed_value: JsonValue
+  confidence_score: ColumnType<string | null, number | string | null, never>
+  confidence_label: ConfidenceLabel
+  state: "pending" | "accepted" | "rejected"
+  reviewer_id: string | null
+  reviewed_at: NullableTimestamp
+  review_reason: string | null
+  created_at: GeneratedTimestamp
 }
 
 export interface ExportArtifactTable {
@@ -738,4 +888,11 @@ export interface Database {
   service_order_status_history: ServiceOrderStatusHistoryTable
   job_runs: JobRunTable
   export_artifacts: ExportArtifactTable
+  business_calendar_events: BusinessCalendarEventTable
+  metric_snapshots: MetricSnapshotTable
+  forecast_runs: ForecastRunTable
+  forecast_points: ForecastPointTable
+  forecast_backtests: ForecastBacktestTable
+  recommendation_runs: RecommendationRunTable
+  recommendations: RecommendationTable
 }

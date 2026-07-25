@@ -15,6 +15,7 @@ import type { HistoryService } from "../modules/history/history-service.js"
 import type { DashboardService } from "../modules/dashboard/dashboard-service.js"
 import type { AuditService } from "../modules/audit/audit-service.js"
 import type { ExportService } from "../modules/exports/export-service.js"
+import type { IntelligenceService } from "../modules/intelligence/intelligence-service.js"
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -33,6 +34,7 @@ declare module "fastify" {
     dashboardService: DashboardService
     auditService: AuditService
     exportService: ExportService
+    intelligenceService: IntelligenceService
     authenticate: (request: FastifyRequest) => Promise<void>
     authorize: (roles: readonly UserRole[]) => (request: FastifyRequest) => Promise<void>
   }

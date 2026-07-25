@@ -11,6 +11,8 @@ import { serviceOrdersMigration } from "./009-service-orders.js"
 import { phaseOneIntegrityMigration } from "./010-phase-one-integrity.js"
 import { zeroValueReturnsMigration } from "./011-zero-value-returns.js"
 import { historyDashboardExportsMigration } from "./012-history-dashboard-exports.js"
+import { deterministicIntelligenceMigration } from "./013-deterministic-intelligence.js"
+import { intelligenceHardeningMigration } from "./014-intelligence-hardening.js"
 
 const migrations: Record<string, Migration> = {
   "001-foundation": foundationMigration,
@@ -25,6 +27,8 @@ const migrations: Record<string, Migration> = {
   "010-phase-one-integrity": phaseOneIntegrityMigration,
   "011-zero-value-returns": zeroValueReturnsMigration,
   "012-history-dashboard-exports": historyDashboardExportsMigration,
+  "013-deterministic-intelligence": deterministicIntelligenceMigration,
+  "014-intelligence-hardening": intelligenceHardeningMigration,
 }
 
 export const migrationProvider: MigrationProvider = {

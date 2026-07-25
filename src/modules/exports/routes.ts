@@ -1,7 +1,9 @@
 import type { FastifyPluginCallbackTypebox } from "@fastify/type-provider-typebox"
 import { Type } from "@sinclair/typebox"
 import { ErrorResponseSchema } from "../../shared/http/schemas.js"
+import { AppError } from "../../shared/errors/app-error.js"
 import type { AuthenticatedUser } from "../auth/types.js"
+import { AnalyticsJobSchema } from "../intelligence/schemas.js"
 import {
   CreateExportBodySchema,
   ExportJobSchema,
@@ -85,13 +87,23 @@ export const exportRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
       security: [{ bearerAuth: [] }],
       params: IdParamsSchema,
       response: {
-        200: ExportJobSchema,
+        200: Type.Union([ExportJobSchema, AnalyticsJobSchema]),
         401: ErrorResponseSchema,
         403: ErrorResponseSchema,
         404: ErrorResponseSchema,
       },
     },
-  }, async (request) => app.exportService.get(user(request.auth), request.params.id))
+  }, async (request) => {
+    const authenticated = user(request.auth)
+    const job = await app.db.selectFrom("job_runs").select("job_type")
+      .where("tenant_id", "=", authenticated.tenantId)
+      .where("id", "=", request.params.id)
+      .executeTakeFirst()
+    if (!job) throw new AppError(404, "JOB_NOT_FOUND", "Job was not found.")
+    return job.job_type === "analytics"
+      ? app.intelligenceService.getJob(authenticated, request.params.id)
+      : app.exportService.get(authenticated, request.params.id)
+  })
 
   done()
 }

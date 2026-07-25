@@ -5,12 +5,14 @@ import {
   cleanupExpiredExports,
   processPendingExports,
 } from "./modules/exports/export-job.js"
+import { processPendingAnalytics } from "./modules/intelligence/analytics-job.js"
 
 const config = loadConfig()
 const database = createDatabase(config)
 let stopping = false
 let snapshotRunning = false
 let exportRunning = false
+let analyticsRunning = false
 
 async function runSnapshotClosure(): Promise<void> {
   if (snapshotRunning || stopping) return
@@ -43,6 +45,21 @@ async function runExports(): Promise<void> {
   }
 }
 
+async function runAnalytics(): Promise<void> {
+  if (analyticsRunning || stopping) return
+  analyticsRunning = true
+  try {
+    const processed = await processPendingAnalytics(database)
+    if (processed > 0) {
+      console.info(`Processed ${String(processed)} analytics jobs.`)
+    }
+  } catch (error) {
+    console.error("Analytics processing failed.", error)
+  } finally {
+    analyticsRunning = false
+  }
+}
+
 const snapshotTimer = setInterval(() => {
   void runSnapshotClosure()
 }, 60_000)
@@ -51,11 +68,16 @@ const exportTimer = setInterval(() => {
   void runExports()
 }, 5_000)
 
+const analyticsTimer = setInterval(() => {
+  void runAnalytics()
+}, 5_000)
+
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return
   stopping = true
   clearInterval(snapshotTimer)
   clearInterval(exportTimer)
+  clearInterval(analyticsTimer)
   console.info(`Flux worker stopping after ${signal}.`)
   await database.destroy()
 }
@@ -70,4 +92,5 @@ process.once("SIGTERM", () => {
 
 void runSnapshotClosure()
 void runExports()
+void runAnalytics()
 console.info("Flux worker ready.")
