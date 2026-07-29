@@ -166,7 +166,7 @@ export class GeminiProvider extends ResilientProvider {
             maxOutputTokens: this.maxOutputTokens,
             responseFormat: {
               text: {
-                mimeType: "application/json",
+                mimeType: "APPLICATION_JSON",
                 schema: AI_OUTPUT_JSON_SCHEMA,
               },
             },

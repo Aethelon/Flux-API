@@ -60,20 +60,17 @@ class ExportRepositoryStub implements ExportRepository {
 }
 
 void describe("export business rules", () => {
-  void it("blocks aggregate exports for an employee", () => {
+  void it("blocks every export for an employee", () => {
     const service = new ExportService(new ExportRepositoryStub())
 
     assert.throws(
-      () => service.create(employee, { source: "sales_kpis" }, "key"),
+      () => service.create(employee, { source: "sales_history" }, "key"),
       { statusCode: 403, code: "FORBIDDEN" },
     )
   })
 
-  void it("hides another user's export from an employee", async () => {
+  void it("hides exports from an employee", async () => {
     const repository = new ExportRepositoryStub()
-    repository.stored = job({
-      requestedBy: "6b798a76-eaf3-4a79-b006-c88cb78f348f",
-    })
 
     await assert.rejects(
       new ExportService(repository).get(employee, repository.stored.id),
@@ -100,7 +97,10 @@ void describe("export business rules", () => {
     })
 
     await assert.rejects(
-      new ExportService(repository).download(employee, repository.stored.id),
+      new ExportService(repository).download(
+        { ...employee, role: "admin" },
+        repository.stored.id,
+      ),
       { statusCode: 410, code: "EXPORT_EXPIRED" },
     )
   })

@@ -15,6 +15,14 @@ function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex")
 }
 
+function providerConfigured(config: AppConfig): boolean {
+  return config.aiProvider === "gemini"
+    ? config.geminiApiKey !== null
+    : config.aiProvider === "anthropic"
+      ? config.anthropicApiKey !== null
+      : false
+}
+
 function cursor(value: string): AiCursor {
   try {
     const decoded: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"))
@@ -58,12 +66,7 @@ export class AiService {
     idempotencyKey: string,
   ): Promise<AiJob> {
     const provider = this.config.aiProvider
-    const keyAvailable = provider === "gemini"
-      ? this.config.geminiApiKey !== null
-      : provider === "anthropic"
-        ? this.config.anthropicApiKey !== null
-        : false
-    if (provider === "disabled" || !keyAvailable) {
+    if (provider === "disabled" || !providerConfigured(this.config)) {
       throw new AppError(503, "AI_DISABLED", "AI insights are not enabled.")
     }
     const settings = await this.database.selectFrom("tenant_settings").select(
@@ -112,15 +115,21 @@ export class AiService {
       state?: AiInsight["state"]
     },
   ): Promise<AiInsightPage> {
-    const result = await this.repository.listInsights(user.tenantId, {
-      limit: input.limit ? Number(input.limit) : 20,
-      ...(input.cursor ? { cursor: cursor(input.cursor) } : {}),
-      ...(input.state ? { state: input.state } : {}),
-    })
+    const [result, settings] = await Promise.all([
+      this.repository.listInsights(user.tenantId, {
+        limit: input.limit ? Number(input.limit) : 20,
+        ...(input.cursor ? { cursor: cursor(input.cursor) } : {}),
+        ...(input.state ? { state: input.state } : {}),
+      }),
+      this.database.selectFrom("tenant_settings").select("ai_enabled")
+        .where("tenant_id", "=", user.tenantId).executeTakeFirstOrThrow(),
+    ])
     return {
       data: result.data,
       nextCursor: nextCursor(result.hasMore, result.data.at(-1)),
-      availability: result.data.length > 0 ? "available" : "unavailable",
+      availability: settings.ai_enabled && providerConfigured(this.config)
+        ? "available"
+        : "unavailable",
       latestRunStatus: result.latestRunStatus,
     }
   }

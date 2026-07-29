@@ -15,7 +15,7 @@ function user(auth: AuthenticatedUser | null): AuthenticatedUser {
 
 export const historyRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   app.get("/history/sales", {
-    preHandler: app.authorize(["admin", "funcionario"]),
+    preHandler: app.authorize(["admin"]),
     schema: {
       tags: ["History"],
       security: [{ bearerAuth: [] }],
@@ -24,6 +24,7 @@ export const historyRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
         200: SaleHistoryPageSchema,
         400: ErrorResponseSchema,
         401: ErrorResponseSchema,
+        403: ErrorResponseSchema,
       },
     },
   }, async (request) => app.historyService.listSales(user(request.auth), request.query))

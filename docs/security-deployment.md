@@ -10,12 +10,13 @@
 
 ## PostgreSQL roles
 
-Use separate login roles for migrations, API, worker, and read-only administration:
+Use separate login roles for migrations, the application runtime, and read-only
+administration:
 
 - Migration role: owns schema changes; unavailable to running applications.
-- API role: CRUD only on application tables and sequence usage.
-- Worker role: reads domain snapshots and updates jobs, exports, analytics, outbox,
-  audit metadata, and AI history.
+- Runtime role: CRUD only on application tables and sequence usage, including the
+  embedded background jobs that update exports, analytics, audit metadata, and AI
+  history.
 - Read-only role: `SELECT` only, with no access to authentication token hashes.
 
 Grant permissions to explicit tables. Do not grant superuser, database creation,

@@ -5,7 +5,7 @@
 - Recovery point objective: 24 hours or the configured `BACKUP_RPO_HOURS`.
 - Recovery time objective: 60 minutes or the configured `BACKUP_RTO_MINUTES`.
 - API readiness requires a successful PostgreSQL query.
-- Production requires at least one API process and one worker process.
+- Production requires at least one API process, which includes background jobs.
 
 ## Health and metrics
 
@@ -27,7 +27,8 @@ Alert when `flux_alert` is `1`. Defined alert types:
 ## Incident response
 
 1. Record the start time, environment, request/correlation IDs, and active deployment.
-2. Check liveness, readiness, PostgreSQL availability, worker logs, and `flux_alert`.
+2. Check liveness, readiness, PostgreSQL availability, background-job logs, and
+   `flux_alert`.
 3. Do not edit immutable sales, stock movements, cash movements, audit events, or
    analytical runs directly.
 4. Disable the affected optional subsystem when possible. AI can be disabled with
@@ -56,7 +57,7 @@ schema comparison, critical table counts, duration, and result in
 1. Build and test the exact commit.
 2. Back up the database and confirm a recent successful restore verification.
 3. Apply migrations as a separate controlled step.
-4. Deploy the API, then the worker.
+4. Deploy the API; its background-job scheduler starts in the same process.
 5. Verify liveness, readiness, metrics, authentication, and one read-only tenant flow.
 6. Roll application code back independently if needed. After production data changes,
    use forward database fixes instead of destructive migration rollback.

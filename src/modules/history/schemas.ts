@@ -59,6 +59,24 @@ export const SaleHistoryRecordSchema = Type.Object({
   itemNames: Type.Array(Type.String()),
   paymentMethods: Type.Array(PaymentMethodSchema),
   hasReturns: Type.Boolean(),
+  details: Type.Optional(Type.Object({
+    items: Type.Array(Type.Object({
+      productName: Type.String(),
+      productType: Type.Union([
+        Type.Literal("raw_material"),
+        Type.Literal("finished_product"),
+        Type.Literal("packaging"),
+        Type.Literal("service"),
+      ]),
+      quantity: Type.Number({ exclusiveMinimum: 0 }),
+      grossAmountCents: Type.Integer({ minimum: 0 }),
+    })),
+    payments: Type.Array(Type.Object({
+      method: PaymentMethodSchema,
+      effectiveAmountCents: Type.Integer({ minimum: 0 }),
+      installments: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+    })),
+  })),
   financial: Type.Optional(FinancialSchema),
 })
 

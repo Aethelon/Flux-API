@@ -1,4 +1,4 @@
-import type { PaymentMethod, SaleStatus } from "../../database/types.js"
+import type { PaymentMethod, ProductType, SaleStatus } from "../../database/types.js"
 
 export interface HistoryCursor {
   completedAt: string
@@ -30,6 +30,19 @@ export interface SaleHistoryRecord {
   itemNames: string[]
   paymentMethods: PaymentMethod[]
   hasReturns: boolean
+  details?: {
+    items: Array<{
+      productName: string
+      productType: ProductType
+      quantity: number
+      grossAmountCents: number
+    }>
+    payments: Array<{
+      method: PaymentMethod
+      effectiveAmountCents: number
+      installments: number | null
+    }>
+  }
   financial?: {
     grossAmountCents: number
     discountAmountCents: number

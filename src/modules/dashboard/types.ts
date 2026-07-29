@@ -23,25 +23,47 @@ export interface Dashboard {
   sales: HistoryKpis
   revenueSeries: Array<{
     bucketStart: string
+    completedSaleCount: number
     grossRevenueCents: number
     discountAmountCents: number
     returnedAmountCents: number
     netRevenueCents: number
+  }>
+  serviceOrderSeries: Array<{
+    bucketStart: string
+    createdCount: number
+    completedCount: number
   }>
   topProducts: {
     rankedBy: TopProductMetric
     data: Array<{
       productId: string
       name: string
+      barcode: string | null
+      type: "raw_material" | "finished_product" | "packaging" | "service"
       unitsSold: number
       netRevenueCents: number
     }>
   }
+  inventorySeries: Array<{
+    bucketStart: string
+    soldOutCount: number
+    lowStockCount: number
+  }>
   inventory: {
     activeProductCount: number
     soldOutCount: number
     lowStockCount: number
     inventoryValueCents: number | null
+    unitTurnover: number | null
+    coverageDays: number | null
+    stockoutRate: number | null
+  }
+  customers: {
+    activeCustomerCount: number
+    repeatCustomerCount: number
+    purchaseFrequency: number | null
+    repeatCustomerRate: number | null
   }
   serviceOrders: {
     createdCount: number

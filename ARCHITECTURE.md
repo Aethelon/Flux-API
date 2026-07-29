@@ -52,10 +52,13 @@ The backend, not the frontend or the language model, is the source of truth for 
 
 ### 3.1 Application shape
 
-Use a modular monolith with two runtime entry points from the same codebase:
+Use a modular monolith with one runtime entry point for the D'lara pilot:
 
-1. `api`: synchronous HTTP API.
-2. `worker`: asynchronous outbox, analytics, forecast, recommendation, and AI jobs.
+1. `api`: synchronous HTTP API with an embedded scheduler for exports, analytics,
+   forecasts, recommendations, AI jobs, inventory snapshots, and housekeeping.
+
+Job state remains persisted in PostgreSQL. The scheduler may become a separate process
+later only after measured load requires independent scaling.
 
 Modules must own their application services and database access boundaries:
 
@@ -84,7 +87,7 @@ Do not split these modules into microservices in the first version. A single tra
 - Kysely as the typed PostgreSQL query layer with versioned migrations.
 - JSON Schema validation shared by requests, responses, OpenAPI, and structured AI outputs where applicable.
 - OpenAPI documentation generated from route schemas.
-- A PostgreSQL transactional outbox and database-backed worker queue initially.
+- A PostgreSQL transactional outbox and database-backed job queue initially.
 - Containerized local and production execution.
 
 Redis or an external queue may be introduced later only after a measured need. The initial design must not require it.
@@ -160,17 +163,17 @@ The authenticated role comes from the server-side user record. The API never acc
 | View the assigned current cash session and its movements | Allowed | Allowed |
 | Cash-register administration, other registers, closed-session history, and historical reconciliation | Allowed | Denied |
 | Employee management | Allowed | Denied |
-| Sales history records | Allowed | Allowed |
+| Sales history records | Allowed | Denied |
 | Sales history KPIs and revenue aggregates | Allowed | Denied |
 | Point of sale | Allowed | Allowed, using the user's assigned open cash session |
 | Orders, inventory, and customers | Allowed | Allowed |
 
 ### 5.4 Authorization behavior
 
-- Admin-only resource groups include `/dashboard`, `/intelligence`, cash-register administration and closed-session history, `/employees`, and `/history/kpis`.
+- Admin-only resource groups include `/dashboard`, `/intelligence`, cash-register administration and closed-session history, `/employees`, and all `/history` endpoints.
 - A `funcionario` may open only the register assigned to the authenticated user; operate only that current session; and close only that same active session.
 - Employee-scoped cash operations derive employee and register IDs from the authenticated server-side context. The client cannot choose them.
-- The sales-history list may be used by `funcionario`, but its response excludes totals, revenue, margin, trends, KPIs, and other aggregates.
+- A `funcionario` cannot access sales or service history records, history KPIs, or historical reconciliation.
 - A `funcionario` may retrieve the operational totals and movements of only the currently active assigned session, including sales, withdrawals, and supplies.
 - A `funcionario` may create a withdrawal or supply only in that current assigned session. The amount must be positive, the reason is mandatory, and a withdrawal cannot exceed the available cash amount calculated by the server.
 - A `funcionario` cannot list closed cash sessions, reopen a session, retrieve historical reconciliation, query another register, or use cash-administration endpoints.
@@ -324,7 +327,8 @@ Each material state change writes an `audit_events` row in the same database tra
 - `entity_id`
 - `request_id`
 - `correlation_id`
-- `source` (`api`, `worker`, `migration`, or `system`)
+- `source` (`api`, `worker`, `migration`, or `system`); `worker` identifies background
+  job execution even while the scheduler is embedded in the API process
 - `reason`
 - redacted `before_json`
 - redacted `after_json`
@@ -392,7 +396,7 @@ The operation is idempotent. A failed step rolls back every step.
 - Confirmed and cancelled counts are immutable. Cancellation records its actor, time, and reason without changing stock.
 - Every movement records its source document and the balance resulting from the movement.
 - Products cannot change between service and stock-managed types after creation because that would invalidate their inventory-history semantics.
-- Movements update tenant-local daily inventory snapshots and stockout intervals transactionally. The worker closes incomplete snapshots after the tenant-local day ends.
+- Movements update tenant-local daily inventory snapshots and stockout intervals transactionally. The embedded background scheduler closes incomplete snapshots after the tenant-local day ends.
 
 ## 9. HTTP API design
 
@@ -441,13 +445,13 @@ Customers and employees:
 Sales and history:
 
 - `POST /api/v1/sales`
-- `GET /api/v1/sales/:id`
+- `GET /api/v1/sales/:id` (`admin` only)
 - `POST /api/v1/sales/:id/cancel`
 - `POST /api/v1/sales/:id/returns`
-- `GET /api/v1/history/sales`
+- `GET /api/v1/history/sales` (`admin` only)
 - `GET /api/v1/history/kpis` (`admin` only)
 
-The employee-visible history list returns transaction records only and never embeds aggregate fields.
+History records, details, and aggregates are restricted to administrators.
 
 Cash:
 
@@ -488,7 +492,11 @@ Exports must apply the same tenant, role, field-level, and aggregate restriction
 
 ### 10.1 Transactional outbox
 
-A domain write and its `outbox_events` record are committed in the same transaction. The worker claims pending rows with row-level locking, publishes/processes them, and records attempts and completion. Processing is at-least-once, so every consumer must be idempotent.
+A domain write and its `outbox_events` record are committed in the same transaction.
+When an external integration is introduced, its consumer must claim pending rows with
+row-level locking, publish/process them, and record attempts and completion. Processing
+is at-least-once, so every consumer must be idempotent. The D'lara pilot persists and
+monitors outbox rows but does not run an external integration consumer.
 
 Typical events:
 
@@ -861,7 +869,9 @@ suggested_discount = min(base_discount, max_safe_discount)
 
 `k`, `promotion_cap`, `m_min`, thresholds, and their versions are stored with the recommendation. If cost is unknown, the system may flag overstock for review but must not propose a discount amount.
 
-No promotion is activated automatically. An admin accepts or rejects it, and that decision is audited.
+No promotion is activated autonomously. When an admin explicitly applies a valid promotion recommendation, the backend changes the current price and records the old/new price, actor, reason, recommendation, audit event, and outbox event in the same transaction. The application is rejected as stale if the product price changed after the recommendation was generated.
+
+When an admin explicitly applies a valid replenishment recommendation, the backend creates and submits a purchase order linked to the recommendation, using the current supplier relation, purchase constraints, lead time, and product cost. Applying the recommendation never increases inventory; inventory changes only when the corresponding goods receipt is completed. Review-only overstock candidates record the administrator decision without changing price or stock.
 
 ### 12.12 Core KPI definitions
 
@@ -1046,7 +1056,7 @@ Maintain a versioned evaluation set containing synthetic or anonymized metric sn
 - Use secure HTTP headers and HTTPS in deployed environments.
 - Keep secrets out of source control, logs, audit JSON, job payloads, and error responses.
 - Redact sensitive fields centrally before structured logging.
-- Use least-privilege database roles for migrations, API, worker, analytics, and read-only administration.
+- Use least-privilege database roles for migrations, the API runtime, analytics, and read-only administration.
 - Protect CSV exports against formula injection and record who generated each export.
 - Return generic authentication errors and stable safe domain errors.
 
@@ -1089,7 +1099,7 @@ Use fixed fixtures with hand-calculated expected values and property tests for i
 
 - Validate OpenAPI request and response examples.
 - Exercise the frontend-required flows with admin and employee accounts.
-- Verify an employee cannot access dashboard, intelligence, cash administration, closed-session cash history, employees, or history KPIs.
+- Verify an employee cannot access dashboard, intelligence, cash administration, closed-session cash history, employees, sales history, or history KPIs.
 - Verify an employee can open, view, withdraw from, supply, and close only the assigned current cash session and complete a sale only with that session open.
 - Verify an employee cannot retrieve a closed session, historical reconciliation, another register, or another employee's cash movements.
 - Verify exports never bypass permissions.
@@ -1107,7 +1117,7 @@ Use fixed fixtures with hand-calculated expected values and property tests for i
 - Environments: local, test/CI, staging, and production.
 - Run migrations as a separate controlled deployment step before starting code that requires them.
 - Prefer backward-compatible expand/migrate/contract migrations.
-- Run at least one API process and one worker process in production.
+- Run at least one API process; it includes the background-job scheduler for the D'lara pilot.
 - Use managed PostgreSQL with encrypted backups and point-in-time recovery when available.
 - Prevent deployment when migrations, unit tests, integration tests, or API contract validation fail.
 - Roll back application code independently; use forward database fixes instead of destructive migration rollback after production data changes.

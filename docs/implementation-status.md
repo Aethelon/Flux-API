@@ -19,6 +19,8 @@ Last verified against the frontend and backend working trees on 2026-07-25.
 - Gemini and Anthropic adapters behind an optional, asynchronous AI layer. Production
   AI remains disabled until a provider, credentials, budget, and evaluation policy are
   configured.
+- Persisted background jobs run inside the API process for the D'lara pilot. Their
+  PostgreSQL contracts allow later extraction if independent scaling becomes necessary.
 - CI validation, PostgreSQL integration coverage for phases 1 through 5, backup and
   restore procedures, monitoring endpoints, and operational runbooks.
 
@@ -38,9 +40,9 @@ Last verified against the frontend and backend working trees on 2026-07-25.
   are implemented.
 - The frontend has compile, lint, and production-build validation but no automated
   browser or component test suite.
-- The sales-history screen and global search currently index the latest 100 sales, and
-  the history screen loads individual sale details separately. Larger datasets require
-  cursor-based table pagination and remote, debounced search before commercialization.
+- The administrator sales-history screen and global search currently index the latest
+  100 sales. Larger datasets require cursor-based table pagination and remote,
+  debounced search before commercialization.
 
 These gaps must remain explicit in release planning. They must not be represented in
 the interface or project reports as delivered behavior.

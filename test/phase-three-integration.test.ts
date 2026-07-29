@@ -562,7 +562,7 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     assert.ok(Number(backtestCount.count) > 0)
   })
 
-  void it("persists reviewable recommendations without automatic actions", async () => {
+  void it("applies recommendations only after an administrator decision", async () => {
     assert.equal(
       (await request(
         "POST",
@@ -616,6 +616,22 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     assert.ok(evidence.dataWindow)
     assert.ok(evidence.completeness)
     assert.ok(evidence.limitations)
+    const purchaseCountBeforeReview = await app.db.selectFrom("purchase_orders")
+      .select(({ fn }) => fn.countAll<string>().as("count"))
+      .where("tenant_id", "=", tenantId)
+      .where("recommendation_id", "is not", null)
+      .executeTakeFirstOrThrow()
+    assert.equal(Number(purchaseCountBeforeReview.count), 0)
+    const promotionProductId = String(
+      (promotion.product as Record<string, unknown>).id,
+    )
+    const promotionProductBeforeReview = await app.db.selectFrom("products")
+      .select("current_price_cents")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", promotionProductId)
+      .executeTakeFirstOrThrow()
+    assert.equal(promotionProductBeforeReview.current_price_cents, 2_000)
+
     const reviewKey = randomUUID()
     const reviewed = await request(
       "POST",
@@ -645,17 +661,70 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     )
     assert.equal(foreignReview.statusCode, 409)
 
-    const purchaseCount = await app.db.selectFrom("purchase_orders")
-      .select(({ fn }) => fn.countAll<string>().as("count"))
+    const purchaseOrder = await app.db.selectFrom("purchase_orders")
+      .select([
+        "id",
+        "status",
+        "supplier_id",
+        "approved_by",
+        "recommendation_id",
+      ])
       .where("tenant_id", "=", tenantId)
-      .where("recommendation_id", "is not", null)
+      .where("recommendation_id", "=", String(replenishment.id))
       .executeTakeFirstOrThrow()
-    assert.equal(Number(purchaseCount.count), 0)
+    assert.equal(purchaseOrder.status, "submitted")
+    assert.equal(purchaseOrder.supplier_id, replenishmentValue.supplierId)
+    assert.equal(purchaseOrder.approved_by, adminId)
+    const purchaseItem = await app.db.selectFrom("purchase_order_items")
+      .select(["product_id", "ordered_quantity", "received_quantity"])
+      .where("tenant_id", "=", tenantId)
+      .where("purchase_order_id", "=", purchaseOrder.id)
+      .executeTakeFirstOrThrow()
+    assert.equal(purchaseItem.product_id, demandProductId)
+    assert.equal(Number(purchaseItem.ordered_quantity), Number(replenishmentValue.quantity))
+    assert.equal(Number(purchaseItem.received_quantity), 0)
+    const balanceAfterApplication = await app.db.selectFrom("inventory_balances")
+      .select("on_hand")
+      .where("tenant_id", "=", tenantId)
+      .where("product_id", "=", demandProductId)
+      .executeTakeFirstOrThrow()
+    assert.equal(Number(balanceAfterApplication.on_hand), 0)
+
+    const promotionReview = await request(
+      "POST",
+      `/api/v1/intelligence/recommendations/${String(promotion.id)}/review`,
+      adminToken,
+      { decision: "accepted", reason: "Approved promotional price" },
+      randomUUID(),
+    )
+    assert.equal(promotionReview.statusCode, 200)
+    assert.equal(promotionReview.body.state, "accepted")
+    const promotionProductAfterReview = await app.db.selectFrom("products")
+      .select("current_price_cents")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", promotionProductId)
+      .executeTakeFirstOrThrow()
+    assert.equal(promotionProductAfterReview.current_price_cents, 1_400)
+    const priceHistory = await app.db.selectFrom("product_price_history")
+      .select(["old_price_cents", "new_price_cents", "reason"])
+      .where("tenant_id", "=", tenantId)
+      .where("product_id", "=", promotionProductId)
+      .orderBy("effective_at", "desc")
+      .executeTakeFirstOrThrow()
+    assert.equal(priceHistory.old_price_cents, 2_000)
+    assert.equal(priceHistory.new_price_cents, 1_400)
+    assert.match(priceHistory.reason, new RegExp(String(promotion.id)))
+
     const auditCount = await app.db.selectFrom("audit_events")
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .where("tenant_id", "=", tenantId)
-      .where("action", "in", ["analytics.completed", "recommendation.reviewed"])
+      .where("action", "in", [
+        "analytics.completed",
+        "recommendation.applied",
+        "purchase_order.created",
+        "product.price_changed",
+      ])
       .executeTakeFirstOrThrow()
-    assert.ok(Number(auditCount.count) >= 3)
+    assert.ok(Number(auditCount.count) >= 6)
   })
 })

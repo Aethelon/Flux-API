@@ -34,25 +34,58 @@ export const DashboardSchema = Type.Object({
   sales: HistoryKpisSchema,
   revenueSeries: Type.Array(Type.Object({
     bucketStart: Type.String({ format: "date" }),
+    completedSaleCount: Type.Integer({ minimum: 0 }),
     grossRevenueCents: Type.Integer({ minimum: 0 }),
     discountAmountCents: Type.Integer({ minimum: 0 }),
     returnedAmountCents: Type.Integer({ minimum: 0 }),
     netRevenueCents: Type.Integer(),
+  })),
+  serviceOrderSeries: Type.Array(Type.Object({
+    bucketStart: Type.String({ format: "date" }),
+    createdCount: Type.Integer({ minimum: 0 }),
+    completedCount: Type.Integer({ minimum: 0 }),
   })),
   topProducts: Type.Object({
     rankedBy: Type.Union([Type.Literal("units"), Type.Literal("net_revenue")]),
     data: Type.Array(Type.Object({
       productId: Type.String({ format: "uuid" }),
       name: Type.String(),
+      barcode: Type.Union([Type.String(), Type.Null()]),
+      type: Type.Union([
+        Type.Literal("raw_material"),
+        Type.Literal("finished_product"),
+        Type.Literal("packaging"),
+        Type.Literal("service"),
+      ]),
       unitsSold: Type.Number(),
       netRevenueCents: Type.Integer(),
     })),
   }),
+  inventorySeries: Type.Array(Type.Object({
+    bucketStart: Type.String({ format: "date" }),
+    soldOutCount: Type.Integer({ minimum: 0 }),
+    lowStockCount: Type.Integer({ minimum: 0 }),
+  })),
   inventory: Type.Object({
     activeProductCount: Type.Integer({ minimum: 0 }),
     soldOutCount: Type.Integer({ minimum: 0 }),
     lowStockCount: Type.Integer({ minimum: 0 }),
     inventoryValueCents: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    unitTurnover: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+    coverageDays: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+    stockoutRate: Type.Union([
+      Type.Number({ minimum: 0, maximum: 1 }),
+      Type.Null(),
+    ]),
+  }),
+  customers: Type.Object({
+    activeCustomerCount: Type.Integer({ minimum: 0 }),
+    repeatCustomerCount: Type.Integer({ minimum: 0 }),
+    purchaseFrequency: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+    repeatCustomerRate: Type.Union([
+      Type.Number({ minimum: 0, maximum: 1 }),
+      Type.Null(),
+    ]),
   }),
   serviceOrders: Type.Object({
     createdCount: Type.Integer({ minimum: 0 }),

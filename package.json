@@ -8,16 +8,16 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "dev:worker": "tsx watch src/worker.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
-    "start:worker": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "tsx --test test/**/*.test.ts",
     "db:migrate": "tsx src/database/cli.ts up",
     "db:migrate:down": "tsx src/database/cli.ts down",
     "db:seed:admin": "tsx src/database/seeds/admin.ts",
+    "db:seed:demo": "tsx src/database/seeds/demo.ts",
+    "db:seed:demo-history": "tsx src/database/seeds/demo-history.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {

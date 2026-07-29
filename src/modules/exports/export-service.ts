@@ -17,11 +17,9 @@ function normalizedDate(value: string | undefined, field: string): string | unde
   return parsed.toISOString()
 }
 
-function assertAccess(user: AuthenticatedUser, job: ExportJob): void {
+function assertAccess(user: AuthenticatedUser): void {
   if (user.role === "admin") return
-  if (job.requestedBy !== user.id || job.source !== "sales_history") {
-    throw new AppError(404, "EXPORT_NOT_FOUND", "Export was not found.")
-  }
+  throw new AppError(404, "EXPORT_NOT_FOUND", "Export was not found.")
 }
 
 export class ExportService {
@@ -32,7 +30,7 @@ export class ExportService {
     input: CreateExportInput,
     idempotencyKey: string,
   ): Promise<ExportJob> {
-    if (user.role !== "admin" && input.source !== "sales_history") {
+    if (user.role !== "admin") {
       throw new AppError(403, "FORBIDDEN", "You do not have permission for this export.")
     }
     const from = normalizedDate(input.from, "from")
@@ -67,7 +65,7 @@ export class ExportService {
   async get(user: AuthenticatedUser, id: string): Promise<ExportJob> {
     const job = await this.repository.get(user.tenantId, id)
     if (!job) throw new AppError(404, "EXPORT_NOT_FOUND", "Export was not found.")
-    assertAccess(user, job)
+    assertAccess(user)
     return job
   }
 

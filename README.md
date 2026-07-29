@@ -22,10 +22,11 @@ flowchart LR
     M --> K["Kysely repositories"]
     K --> DB[("PostgreSQL")]
     M --> Q["Persisted job records"]
-    W["Background worker"] --> Q
-    W --> DB
-    W --> D["Deterministic analytics"]
-    W --> P["Gemini or Anthropic"]
+    H --> B["Embedded background jobs"]
+    B --> Q
+    B --> DB
+    B --> D["Deterministic analytics"]
+    B --> P["Gemini or Anthropic"]
 ```
 
 The application is intentionally a modular monolith:
@@ -33,9 +34,9 @@ The application is intentionally a modular monolith:
 - one transactional PostgreSQL database protects sale, stock, payment, cash, and
   service-order consistency;
 - domain modules own their routes, validation, services, and repository boundaries;
-- the HTTP process handles synchronous requests;
-- a separate worker processes exports, analytics, AI jobs, inventory snapshots, and
-  retention housekeeping;
+- the API process handles synchronous requests and embedded background jobs;
+- background jobs process exports, analytics, AI, inventory snapshots, and retention
+  housekeeping without requiring a separate service for the D'lara pilot;
 - TypeBox route schemas drive validation and OpenAPI documentation;
 - asynchronous work is persisted before processing and can be reviewed after restart.
 
@@ -174,13 +175,8 @@ Start the API:
 npm run dev
 ```
 
-Start the worker in a second terminal:
-
-```bash
-npm run dev:worker
-```
-
-The API listens on [http://localhost:3333](http://localhost:3333) by default.
+The API and its embedded background jobs start together. The API listens on
+[http://localhost:3333](http://localhost:3333) by default.
 
 ### First D'lara administrator
 
@@ -199,6 +195,30 @@ npm run db:seed:admin
 ```
 
 The seed is idempotent and does not replace the password of an existing account.
+
+### Local demonstration data
+
+The non-production demonstration seed adds realistic D'lara users, catalog records,
+inventory history, customers, cash sessions, sales, service orders, forecasts, and
+recommendations without deleting existing data:
+
+```bash
+SEED_DEMO_PASSWORD="<at-least-12-characters>" npm run db:seed:demo
+```
+
+The seed is idempotent, refuses to run with `NODE_ENV=production`, and refreshes only
+the dedicated demonstration-user passwords when executed again.
+
+To complement an existing D'lara database with twelve months of purchases and goods
+receipts, current-month sales, historical service orders, daily inventory observations,
+and regenerated forecasts and recommendations, run:
+
+```bash
+npm run db:seed:demo-history
+```
+
+This complementary seed is also idempotent, refuses production execution, and does
+not change user credentials.
 
 ## Configuration
 
@@ -281,9 +301,9 @@ instances. Do not use destructive rollback after production data changes.
 Backup, restore, RPO, and RTO procedures are documented in
 [docs/backup-restore.md](./docs/backup-restore.md).
 
-## Worker responsibilities
+## Background job responsibilities
 
-The worker runs independently from the HTTP process and performs:
+The API process also runs the persisted background-job scheduler, which performs:
 
 - inventory daily-snapshot closure;
 - pending export generation and artifact cleanup;
@@ -291,7 +311,8 @@ The worker runs independently from the HTTP process and performs:
 - AI explanation jobs when a provider is enabled;
 - expired idempotency, outbox, and authentication-session housekeeping.
 
-Run at least one API process and one worker process in production.
+For the D'lara pilot, one API process is sufficient. Job state remains in PostgreSQL,
+so a separate process can be introduced later if measured load requires it.
 
 `outbox_events` are currently persisted and monitored, but no external integration
 consumer claims or delivers them yet. See
@@ -301,11 +322,9 @@ consumer claims or delivers them yet. See
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start the API with file watching |
-| `npm run dev:worker` | Start the worker with file watching |
+| `npm run dev` | Start the API and background jobs with file watching |
 | `npm run build` | Compile production JavaScript into `dist/` |
-| `npm start` | Start the compiled API |
-| `npm run start:worker` | Start the compiled worker |
+| `npm start` | Start the compiled API and background jobs |
 | `npm run typecheck` | Validate TypeScript without emitting files |
 | `npm run lint` | Run ESLint |
 | `npm test` | Run the regular test suite |
@@ -313,6 +332,8 @@ consumer claims or delivers them yet. See
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run db:migrate:down` | Revert the latest migration |
 | `npm run db:seed:admin` | Create the first tenant administrator |
+| `npm run db:seed:demo` | Add idempotent local demonstration data to D'lara |
+| `npm run db:seed:demo-history` | Add historical purchases, current sales, service orders, and analytical observations to D'lara |
 
 ## Testing
 
@@ -344,8 +365,8 @@ exports, monitoring, and provider failure isolation.
 ```text
 src/
 ├── app.ts                     Fastify composition and global plugins
-├── server.ts                  HTTP process entry point
-├── worker.ts                  Background worker entry point
+├── background-jobs.ts         Embedded persisted-job scheduler
+├── server.ts                  API and background-job process entry point
 ├── config/
 │   └── env.ts                 Validated runtime configuration
 ├── database/
@@ -387,7 +408,7 @@ shapes.
 - Use explicit trusted CORS origins; wildcard origins are rejected in production.
 - Store database, JWT, monitoring, and AI credentials in a secret manager.
 - Run migrations as a controlled deployment step.
-- Run API and worker processes independently.
+- Run at least one API process, which includes the background-job scheduler.
 - Protect the monitoring endpoint with its dedicated bearer token.
 - Enable automated PostgreSQL backups and verify restoration regularly.
 - Keep AI optional and use only aggregated, non-personal analytical inputs.

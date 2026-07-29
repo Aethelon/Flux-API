@@ -1,5 +1,10 @@
 import { sql, type Kysely } from "kysely"
-import type { Database, PaymentMethod, SaleStatus } from "../../database/types.js"
+import type {
+  Database,
+  PaymentMethod,
+  ProductType,
+  SaleStatus,
+} from "../../database/types.js"
 import { AppError } from "../../shared/errors/app-error.js"
 import type {
   HistoryKpiInput,
@@ -22,7 +27,18 @@ interface HistoryRow {
   operator_name: string
   item_count: string
   item_names: string[]
+  items: Array<{
+    productName: string
+    productType: ProductType
+    quantity: number
+    grossAmountCents: number
+  }>
   payment_methods: PaymentMethod[]
+  payments: Array<{
+    method: PaymentMethod
+    effectiveAmountCents: number
+    installments: number | null
+  }>
   returned_amount_cents: string
   gross_amount_cents: string
   discount_amount_cents: string
@@ -89,6 +105,10 @@ function mapHistoryRow(row: HistoryRow, includeFinancials: boolean): SaleHistory
     hasReturns: Number(row.returned_amount_cents) > 0,
     ...(includeFinancials
       ? {
+          details: {
+            items: row.items,
+            payments: row.payments,
+          },
           financial: {
             grossAmountCents: Number(row.gross_amount_cents),
             discountAmountCents: Number(row.discount_amount_cents),
@@ -168,7 +188,9 @@ export class KyselyHistoryRepository implements HistoryRepository {
         operator.name AS operator_name,
         item_summary.item_count,
         item_summary.item_names,
+        item_summary.items,
         payment_summary.payment_methods,
+        payment_summary.payments,
         sale.returned_amount_cents,
         sale.gross_amount_cents,
         sale.discount_amount_cents,
@@ -186,6 +208,15 @@ export class KyselyHistoryRepository implements HistoryRepository {
             item.product_name_snapshot
             ORDER BY item.created_at, item.id
           ) AS item_names,
+          JSONB_AGG(
+            JSONB_BUILD_OBJECT(
+              'productName', item.product_name_snapshot,
+              'productType', item.product_type_snapshot,
+              'quantity', item.quantity,
+              'grossAmountCents', item.gross_amount_cents
+            )
+            ORDER BY item.created_at, item.id
+          ) AS items,
           SUM(
             (item.quantity - item.returned_quantity)
               * item.unit_cost_snapshot_cents
@@ -199,11 +230,23 @@ export class KyselyHistoryRepository implements HistoryRepository {
           AND item.sale_id = sale.id
       ) AS item_summary ON true
       INNER JOIN LATERAL (
-        SELECT COALESCE(
-          ARRAY_AGG(DISTINCT payment.payment_method)
-            FILTER (WHERE payment.payment_method IS NOT NULL),
-          ARRAY[]::text[]
-        ) AS payment_methods
+        SELECT
+          COALESCE(
+            ARRAY_AGG(DISTINCT payment.payment_method)
+              FILTER (WHERE payment.payment_method IS NOT NULL),
+            ARRAY[]::text[]
+          ) AS payment_methods,
+          COALESCE(
+            JSONB_AGG(
+              JSONB_BUILD_OBJECT(
+                'method', payment.payment_method,
+                'effectiveAmountCents', payment.effective_amount_cents,
+                'installments', payment.installments
+              )
+              ORDER BY payment.created_at, payment.id
+            ) FILTER (WHERE payment.id IS NOT NULL),
+            '[]'::jsonb
+          ) AS payments
         FROM payments AS payment
         WHERE payment.tenant_id = sale.tenant_id
           AND payment.sale_id = sale.id

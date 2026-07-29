@@ -41,11 +41,17 @@ export const salesRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =
   )))
 
   app.get("/sales/:id", {
+    preHandler: app.authorize(["admin"]),
     schema: {
       tags: ["Sales"],
       security: [{ bearerAuth: [] }],
       params: IdParamsSchema,
-      response: { 200: SaleSchema, 401: ErrorResponseSchema, 404: ErrorResponseSchema },
+      response: {
+        200: SaleSchema,
+        401: ErrorResponseSchema,
+        403: ErrorResponseSchema,
+        404: ErrorResponseSchema,
+      },
     },
   }, async (request) => app.salesService.get(user(request.auth).tenantId, request.params.id))
 

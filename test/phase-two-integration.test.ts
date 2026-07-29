@@ -507,18 +507,23 @@ void describe("Phase 2 PostgreSQL integration", { skip: !runIntegration }, () =>
       `/api/v1/history/sales?from=${from}&to=${to}&limit=2`,
       employeeToken,
     )
-    assert.equal(employeeHistory.statusCode, 200, JSON.stringify(employeeHistory.body))
-    const employeeRows = employeeHistory.body.data as Array<Record<string, unknown>>
-    assert.equal(employeeRows.length, 2)
-    assert.equal("financial" in (employeeRows[0] ?? {}), false)
-    assert.equal(typeof employeeHistory.body.nextCursor, "string")
+    assert.equal(employeeHistory.statusCode, 403)
+
+    const firstPage = await request(
+      "GET",
+      `/api/v1/history/sales?from=${from}&to=${to}&limit=2`,
+      adminToken,
+    )
+    assert.equal(firstPage.statusCode, 200, JSON.stringify(firstPage.body))
+    assert.equal((firstPage.body.data as unknown[]).length, 2)
+    assert.equal(typeof firstPage.body.nextCursor, "string")
 
     const secondPage = await request(
       "GET",
       `/api/v1/history/sales?from=${from}&to=${to}&limit=2&cursor=${
-        encodeURIComponent(String(employeeHistory.body.nextCursor))
+        encodeURIComponent(String(firstPage.body.nextCursor))
       }`,
-      employeeToken,
+      adminToken,
     )
     assert.equal(secondPage.statusCode, 200)
     assert.equal((secondPage.body.data as unknown[]).length, 1)
@@ -530,6 +535,7 @@ void describe("Phase 2 PostgreSQL integration", { skip: !runIntegration }, () =>
     const adminRows = adminHistory.body.data as Array<Record<string, unknown>>
     assert.equal(adminRows.length, 3)
     assert.equal("financial" in (adminRows[0] ?? {}), true)
+    assert.equal("details" in (adminRows[0] ?? {}), true)
     assert.equal(
       adminRows.every((row) =>
         (row.itemNames as string[]).every((name) => name === "Phase Two Product")
@@ -603,22 +609,7 @@ void describe("Phase 2 PostgreSQL integration", { skip: !runIntegration }, () =>
       { source: "sales_history", from, to },
       randomUUID(),
     )
-    assert.equal(employeeExport.statusCode, 202)
-    assert.equal(await processPendingExports(app.db), 1)
-    const exportId = String(employeeExport.body.id)
-    const exportStatus = await request(
-      "GET", `/api/v1/exports/${exportId}`, employeeToken,
-    )
-    assert.equal(exportStatus.body.status, "completed")
-    assert.equal(exportStatus.body.downloadReady, true)
-    const download = await app.inject({
-      method: "GET",
-      url: `/api/v1/exports/${exportId}/download`,
-      headers: { authorization: `Bearer ${employeeToken}` },
-    })
-    assert.equal(download.statusCode, 200)
-    assert.match(download.body, /business_number/)
-    assert.equal(download.body.includes("gross_amount_cents"), false)
+    assert.equal(employeeExport.statusCode, 403)
 
     const adminExport = await request(
       "POST",
@@ -655,8 +646,9 @@ void describe("Phase 2 PostgreSQL integration", { skip: !runIntegration }, () =>
       finished_at: null,
     }).returning("id").executeTakeFirstOrThrow()
     assert.equal(await processPendingExports(app.db), 1)
-    const recovered = await app.db.selectFrom("job_runs").select("status")
+    const recovered = await app.db.selectFrom("job_runs").select(["status", "error_class"])
       .where("id", "=", staleJob.id).executeTakeFirstOrThrow()
-    assert.equal(recovered.status, "completed")
+    assert.equal(recovered.status, "failed")
+    assert.equal(recovered.error_class, "FORBIDDEN")
   })
 })

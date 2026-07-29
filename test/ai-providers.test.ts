@@ -60,7 +60,9 @@ void describe("AI providers", () => {
     const requestBody = requestBodies[0]
     assert.ok(requestBody)
     const generationConfig = requestBody.generationConfig as Record<string, unknown>
-    assert.ok(generationConfig.responseFormat)
+    const responseFormat = generationConfig.responseFormat as Record<string, unknown>
+    const textFormat = responseFormat.text as Record<string, unknown>
+    assert.equal(textFormat.mimeType, "APPLICATION_JSON")
     assert.equal("temperature" in generationConfig, false)
   })
 

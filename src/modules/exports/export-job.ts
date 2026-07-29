@@ -50,11 +50,11 @@ function exportInput(value: unknown): CreateExportInput {
   return value as CreateExportInput
 }
 
-function assertRequester(requester: Requester, input: CreateExportInput): void {
+function assertRequester(requester: Requester): void {
   if (requester.status !== "active" || requester.archived_at !== null) {
     throw new AppError(403, "EXPORT_REQUESTER_INACTIVE", "Export requester is inactive.")
   }
-  if (requester.role !== "admin" && input.source !== "sales_history") {
+  if (requester.role !== "admin") {
     throw new AppError(403, "FORBIDDEN", "Export permission is no longer available.")
   }
 }
@@ -279,7 +279,7 @@ async function generate(
   if (!requester) {
     throw new AppError(403, "EXPORT_REQUESTER_NOT_FOUND", "Export requester was not found.")
   }
-  assertRequester(requester, input)
+  assertRequester(requester)
   switch (input.source) {
     case "sales_history":
       return generateSalesHistory(database, job, requester, input)

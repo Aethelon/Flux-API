@@ -4,11 +4,13 @@ import type {
   ForecastTargetType,
   RecommendationType,
 } from "../../database/types.js"
+import { AppError } from "../../shared/errors/app-error.js"
 import {
   recordDomainEvent,
   replayedEntityId,
   saveEntityIdempotency,
 } from "../../shared/persistence/commands.js"
+import { nextTenantSequence } from "../../shared/persistence/tenant-sequence.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type {
@@ -65,6 +67,37 @@ function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null
     ? value as Record<string, unknown>
     : {}
+}
+
+interface PendingRecommendation {
+  id: string
+  recommendation_type: RecommendationType
+  product_id: string
+  evidence_metrics: unknown
+  proposed_value: unknown
+}
+
+interface AppliedTarget {
+  entityType: string
+  entityId: string
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null
+}
+
+function quantityMatchesScale(quantity: number, scale: number): boolean {
+  const factor = 10 ** scale
+  return Math.abs((quantity * factor) - Math.round(quantity * factor)) < 1e-8
+}
+
+function quantityMatchesMultiple(quantity: number, multiple: number): boolean {
+  return multiple > 0
+    && Math.abs((quantity / multiple) - Math.round(quantity / multiple)) < 1e-8
 }
 
 function stringArray(value: unknown): string[] {
@@ -339,26 +372,257 @@ export class KyselyIntelligenceRepository implements IntelligenceRepository {
     const result = await this.database.transaction().execute(async (transaction) => {
       const replay = await replayedEntityId(transaction, user, route, key, hash)
       if (replay) return replay
+      const recommendation = await transaction.selectFrom("recommendations").select([
+        "id",
+        "recommendation_type",
+        "product_id",
+        "evidence_metrics",
+        "proposed_value",
+      ]).where("tenant_id", "=", user.tenantId).where("id", "=", id)
+        .where("state", "=", "pending").forUpdate().executeTakeFirst()
+      if (!recommendation) return null
+
+      let appliedTarget: AppliedTarget | null = null
+      if (input.decision === "accepted") {
+        if (recommendation.recommendation_type === "promotion") {
+          appliedTarget = await this.applyPromotion(
+            transaction,
+            user,
+            recommendation,
+            input.reason,
+          )
+        } else if (recommendation.recommendation_type === "replenishment") {
+          appliedTarget = await this.applyReplenishment(
+            transaction,
+            user,
+            recommendation,
+            input.reason,
+          )
+        }
+      }
+
+      const reviewedAt = new Date()
       const row = await transaction.updateTable("recommendations").set({
         state: input.decision,
         reviewer_id: user.id,
-        reviewed_at: new Date(),
+        reviewed_at: reviewedAt,
         review_reason: input.reason,
       }).where("tenant_id", "=", user.tenantId).where("id", "=", id)
         .where("state", "=", "pending").returning("id").executeTakeFirst()
       if (!row) return null
       await recordDomainEvent(transaction, user, {
-        action: "recommendation.reviewed",
+        action: appliedTarget ? "recommendation.applied" : "recommendation.reviewed",
         entityType: "recommendation",
         entityId: id,
         reason: input.reason,
-        after: { state: input.decision },
+        after: {
+          state: input.decision,
+          recommendationType: recommendation.recommendation_type,
+          ...(appliedTarget ? { appliedTarget } : {}),
+        },
       })
       await saveEntityIdempotency(transaction, user, route, key, hash, id, 200)
       return id
     })
     if (!result) return null
     return this.getRecommendation(user.tenantId, result)
+  }
+
+  private async applyPromotion(
+    transaction: Kysely<Database>,
+    user: AuthenticatedUser,
+    recommendation: PendingRecommendation,
+    reason: string,
+  ): Promise<AppliedTarget> {
+    const proposed = record(recommendation.proposed_value)
+    const suggestedPriceCents = numberValue(proposed.suggestedPriceCents)
+    if (suggestedPriceCents === null
+      || !Number.isSafeInteger(suggestedPriceCents)
+      || suggestedPriceCents < 0) {
+      throw new AppError(
+        409,
+        "RECOMMENDATION_INVALID",
+        "The promotion recommendation does not contain a valid price.",
+      )
+    }
+
+    const pricingInputs = record(record(recommendation.evidence_metrics).pricingInputs)
+    const recommendedFromPriceCents = numberValue(pricingInputs.sellingPriceCents)
+    const product = await transaction.selectFrom("products").select([
+      "id",
+      "current_price_cents",
+    ]).where("tenant_id", "=", user.tenantId)
+      .where("id", "=", recommendation.product_id)
+      .where("active", "=", true)
+      .where("archived_at", "is", null)
+      .forUpdate()
+      .executeTakeFirst()
+    if (!product) {
+      throw new AppError(
+        409,
+        "RECOMMENDATION_STALE",
+        "The recommended product is no longer available.",
+      )
+    }
+    if (recommendedFromPriceCents === null
+      || product.current_price_cents !== recommendedFromPriceCents) {
+      throw new AppError(
+        409,
+        "RECOMMENDATION_STALE",
+        "The product price changed after this recommendation was generated.",
+      )
+    }
+
+    await transaction.updateTable("products").set({
+      current_price_cents: suggestedPriceCents,
+      updated_by: user.id,
+      updated_at: new Date(),
+      version: sql`version + 1`,
+    }).where("tenant_id", "=", user.tenantId)
+      .where("id", "=", product.id)
+      .execute()
+    await transaction.insertInto("product_price_history").values({
+      tenant_id: user.tenantId,
+      product_id: product.id,
+      old_price_cents: product.current_price_cents,
+      new_price_cents: suggestedPriceCents,
+      actor_id: user.id,
+      reason: `Applied recommendation ${recommendation.id}. ${reason}`,
+    }).execute()
+    await recordDomainEvent(transaction, user, {
+      action: "product.price_changed",
+      entityType: "product",
+      entityId: product.id,
+      reason,
+      before: { priceCents: product.current_price_cents },
+      after: {
+        priceCents: suggestedPriceCents,
+        recommendationId: recommendation.id,
+      },
+    })
+    return { entityType: "product", entityId: product.id }
+  }
+
+  private async applyReplenishment(
+    transaction: Kysely<Database>,
+    user: AuthenticatedUser,
+    recommendation: PendingRecommendation,
+    reason: string,
+  ): Promise<AppliedTarget> {
+    const proposed = record(recommendation.proposed_value)
+    const supplierId = stringValue(proposed.supplierId)
+    const quantity = numberValue(proposed.quantity)
+    if (!supplierId || quantity === null || quantity <= 0) {
+      throw new AppError(
+        409,
+        "RECOMMENDATION_INVALID",
+        "The replenishment recommendation is incomplete.",
+      )
+    }
+
+    const relation = await transaction.selectFrom("product_suppliers as relation")
+      .innerJoin("products as product", (join) => join
+        .onRef("product.id", "=", "relation.product_id")
+        .onRef("product.tenant_id", "=", "relation.tenant_id"))
+      .innerJoin("units as unit", (join) => join
+        .onRef("unit.id", "=", "product.unit_id")
+        .onRef("unit.tenant_id", "=", "product.tenant_id"))
+      .innerJoin("suppliers as supplier", (join) => join
+        .onRef("supplier.id", "=", "relation.supplier_id")
+        .onRef("supplier.tenant_id", "=", "relation.tenant_id"))
+      .select([
+        "relation.supplier_sku",
+        "relation.lead_time_days",
+        "relation.minimum_order_quantity",
+        "relation.pack_multiple",
+        "product.id as product_id",
+        "product.name as product_name",
+        "product.current_cost_cents",
+        "unit.abbreviation as unit_abbreviation",
+        "unit.quantity_scale",
+      ])
+      .where("relation.tenant_id", "=", user.tenantId)
+      .where("relation.product_id", "=", recommendation.product_id)
+      .where("relation.supplier_id", "=", supplierId)
+      .where("relation.active", "=", true)
+      .where("relation.valid_until", "is", null)
+      .where("product.active", "=", true)
+      .where("product.archived_at", "is", null)
+      .where("supplier.active", "=", true)
+      .where("supplier.archived_at", "is", null)
+      .forUpdate()
+      .executeTakeFirst()
+    if (!relation || relation.current_cost_cents === null) {
+      throw new AppError(
+        409,
+        "RECOMMENDATION_STALE",
+        "The product, supplier, or current cost is no longer available.",
+      )
+    }
+
+    const minimumOrderQuantity = Number(relation.minimum_order_quantity)
+    const packMultiple = Number(relation.pack_multiple)
+    if (!quantityMatchesScale(quantity, relation.quantity_scale)
+      || quantity < minimumOrderQuantity
+      || !quantityMatchesMultiple(quantity, packMultiple)) {
+      throw new AppError(
+        409,
+        "RECOMMENDATION_STALE",
+        "The recommended quantity no longer matches the current purchase rules.",
+      )
+    }
+
+    const appliedAt = new Date()
+    const expectedAt = new Date(appliedAt)
+    expectedAt.setUTCDate(expectedAt.getUTCDate() + relation.lead_time_days)
+    const businessNumber = await nextTenantSequence(
+      transaction,
+      user.tenantId,
+      "purchase_order",
+    )
+    const purchaseOrder = await transaction.insertInto("purchase_orders").values({
+      tenant_id: user.tenantId,
+      business_number: businessNumber,
+      supplier_id: supplierId,
+      status: "submitted",
+      ordered_at: appliedAt,
+      expected_at: expectedAt,
+      created_by: user.id,
+      approved_by: user.id,
+      approved_at: appliedAt,
+      cancellation_reason: null,
+      recommendation_id: recommendation.id,
+      notes: `Applied recommendation ${recommendation.id}. ${reason}`,
+    }).returning("id").executeTakeFirstOrThrow()
+    await transaction.insertInto("purchase_order_items").values({
+      tenant_id: user.tenantId,
+      purchase_order_id: purchaseOrder.id,
+      product_id: relation.product_id,
+      product_name_snapshot: relation.product_name,
+      unit_abbreviation_snapshot: relation.unit_abbreviation,
+      ordered_quantity: quantity,
+      received_quantity: 0,
+      agreed_unit_cost_cents: relation.current_cost_cents,
+      supplier_sku_snapshot: relation.supplier_sku,
+      pack_multiple_snapshot: packMultiple,
+      minimum_order_quantity_snapshot: minimumOrderQuantity,
+    }).execute()
+    await recordDomainEvent(transaction, user, {
+      action: "purchase_order.created",
+      entityType: "purchase_order",
+      entityId: purchaseOrder.id,
+      reason,
+      after: {
+        businessNumber,
+        status: "submitted",
+        supplierId,
+        recommendationId: recommendation.id,
+        productId: relation.product_id,
+        quantity,
+        expectedAt: expectedAt.toISOString(),
+      },
+    })
+    return { entityType: "purchase_order", entityId: purchaseOrder.id }
   }
 
   private async getRecommendation(
