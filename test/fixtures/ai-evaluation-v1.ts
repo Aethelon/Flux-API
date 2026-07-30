@@ -14,6 +14,7 @@ export const evaluationInput: SanitizedAiInput = {
     key: "sales_summary",
     entityType: "tenant",
     entityId: null,
+    entityName: null,
     calculationVersion: "v1",
     sourceFrom: "2026-07-01T00:00:00.000Z",
     sourceTo: "2026-07-25T12:00:00.000Z",

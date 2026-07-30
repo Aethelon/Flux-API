@@ -61,6 +61,7 @@ abstract class ResilientProvider implements AiProvider {
     response: unknown,
     latencyMs: number,
     retryCount: number,
+    input: SanitizedAiInput,
   ): AiProviderResult
 
   async generate(input: SanitizedAiInput): Promise<AiProviderResult> {
@@ -80,7 +81,7 @@ abstract class ResilientProvider implements AiProvider {
           const transient = response.status === 429 || response.status >= 500
           throw new AiProviderError(
             transient ? "AI_PROVIDER_TRANSIENT_ERROR" : "AI_PROVIDER_REQUEST_REJECTED",
-            "AI provider request failed.",
+            `AI provider request failed with HTTP ${String(response.status)}.`,
             transient,
             response.status,
           )
@@ -89,6 +90,7 @@ abstract class ResilientProvider implements AiProvider {
           await response.json(),
           Date.now() - startedAt,
           retryCount,
+          input,
         )
         this.failureCount = 0
         this.circuitOpenUntil = 0
@@ -133,6 +135,76 @@ interface GeminiResponse {
   responseId?: string
 }
 
+function metricAlias(index: number): string {
+  return `M${String(index + 1)}`
+}
+
+function geminiInput(input: SanitizedAiInput): SanitizedAiInput {
+  const aliases = new Map(
+    input.metrics.map((metric, index) => [metric.id, metricAlias(index)]),
+  )
+  const sourceMetricIds = (ids: string[]): string[] =>
+    ids.flatMap((id) => {
+      const alias = aliases.get(id)
+      return alias ? [alias] : []
+    })
+  return {
+    ...input,
+    metrics: input.metrics.map((metric, index) => ({
+      ...metric,
+      id: metricAlias(index),
+    })),
+    forecasts: input.forecasts.map((forecast) => ({
+      ...forecast,
+      sourceMetricIds: sourceMetricIds(forecast.sourceMetricIds),
+    })),
+    recommendations: input.recommendations.map((recommendation) => ({
+      ...recommendation,
+      sourceMetricIds: sourceMetricIds(recommendation.sourceMetricIds),
+    })),
+  }
+}
+
+function restoreGeminiMetricIds(
+  output: unknown,
+  input: SanitizedAiInput,
+): unknown {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) {
+    return output
+  }
+  const metricIds = new Map(
+    input.metrics.map((metric, index) => [metricAlias(index), metric.id]),
+  )
+  const restoreEvidence = (value: unknown): unknown => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return value
+    }
+    const evidence = value as Record<string, unknown>
+    return {
+      ...evidence,
+      sourceMetricIds: Array.isArray(evidence.sourceMetricIds)
+        ? (evidence.sourceMetricIds as unknown[]).map((id) =>
+            typeof id === "string" ? metricIds.get(id) ?? id : id
+          )
+        : evidence.sourceMetricIds,
+    }
+  }
+  const parsed = output as Record<string, unknown>
+  return {
+    ...parsed,
+    summary: restoreEvidence(parsed.summary),
+    strengths: Array.isArray(parsed.strengths)
+      ? parsed.strengths.map(restoreEvidence)
+      : parsed.strengths,
+    risks: Array.isArray(parsed.risks)
+      ? parsed.risks.map(restoreEvidence)
+      : parsed.risks,
+    recommendations: Array.isArray(parsed.recommendations)
+      ? parsed.recommendations.map(restoreEvidence)
+      : parsed.recommendations,
+  }
+}
+
 export class GeminiProvider extends ResilientProvider {
   readonly name = "gemini" as const
 
@@ -160,7 +232,7 @@ export class GeminiProvider extends ResilientProvider {
           },
           contents: [{
             role: "user",
-            parts: [{ text: JSON.stringify(input) }],
+            parts: [{ text: JSON.stringify(geminiInput(input)) }],
           }],
           generationConfig: {
             maxOutputTokens: this.maxOutputTokens,
@@ -181,6 +253,7 @@ export class GeminiProvider extends ResilientProvider {
     response: unknown,
     latencyMs: number,
     retryCount: number,
+    input: SanitizedAiInput,
   ): AiProviderResult {
     const typed = response as GeminiResponse
     const text = typed.candidates?.[0]?.content?.parts
@@ -194,7 +267,7 @@ export class GeminiProvider extends ResilientProvider {
     }
     try {
       return {
-        output: JSON.parse(text) as unknown,
+        output: restoreGeminiMetricIds(JSON.parse(text) as unknown, input),
         providerRequestId: typed.responseId ?? null,
         inputTokens: typed.usageMetadata?.promptTokenCount ?? 0,
         outputTokens: typed.usageMetadata?.candidatesTokenCount ?? 0,

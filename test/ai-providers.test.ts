@@ -15,7 +15,19 @@ const input: SanitizedAiInput = {
     currency: "BRL",
   },
   generatedAt: "2026-07-25T12:00:00.000Z",
-  metrics: [],
+  metrics: [{
+    id: "metric",
+    key: "completed_sales",
+    entityType: "tenant",
+    entityId: null,
+    entityName: null,
+    calculationVersion: "test-v1",
+    sourceFrom: "2026-07-01T00:00:00.000Z",
+    sourceTo: "2026-07-25T12:00:00.000Z",
+    generatedAt: "2026-07-25T12:00:00.000Z",
+    result: { value: 1 },
+    completeness: { complete: true },
+  }],
   forecasts: [],
   recommendations: [],
   limitations: [],
@@ -25,6 +37,10 @@ const output = {
   strengths: [],
   risks: [],
   recommendations: [],
+}
+const geminiOutput = {
+  ...output,
+  summary: { text: "Resumo", sourceMetricIds: ["M1"] },
 }
 
 function body(init: RequestInit | undefined): Record<string, unknown> {
@@ -48,7 +64,7 @@ void describe("AI providers", () => {
           requestBodies.push(body(init))
           return Promise.resolve(new Response(JSON.stringify({
             responseId: "gemini-request",
-            candidates: [{ content: { parts: [{ text: JSON.stringify(output) }] } }],
+            candidates: [{ content: { parts: [{ text: JSON.stringify(geminiOutput) }] } }],
             usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
           }), { status: 200 }))
         },
@@ -63,6 +79,15 @@ void describe("AI providers", () => {
     const responseFormat = generationConfig.responseFormat as Record<string, unknown>
     const textFormat = responseFormat.text as Record<string, unknown>
     assert.equal(textFormat.mimeType, "APPLICATION_JSON")
+    const contents = requestBody.contents as Array<{
+      parts: Array<{ text: string }>
+    }>
+    assert.equal(
+      (JSON.parse(contents[0]?.parts[0]?.text ?? "{}") as SanitizedAiInput)
+        .metrics[0]?.id,
+      "M1",
+    )
+    assert.equal(JSON.stringify(textFormat.schema).includes('"enum":["metric"]'), false)
     assert.equal("temperature" in generationConfig, false)
   })
 

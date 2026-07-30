@@ -16,6 +16,15 @@ void describe("AI semantic validation", () => {
     assert.equal(result.output?.summary.text, "O faturamento registrado foi de R$ 10.901,20.")
   })
 
+  void it("accepts a year supplied by the evidence period", () => {
+    const output = validOutput() as {
+      summary: { text: string; sourceMetricIds: string[] }
+    }
+    output.summary.text = "O período analisado inclui julho de 2026."
+    const result = validateAiOutput(output, input)
+    assert.equal(result.accepted, true)
+  })
+
   void it("rejects unknown evidence", () => {
     const output = validOutput() as {
       summary: { text: string; sourceMetricIds: string[] }

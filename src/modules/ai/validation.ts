@@ -98,6 +98,14 @@ function numericValues(
     if (/cents$/i.test(key)) values.push(value / 100)
     return
   }
+  if (typeof value === "string") {
+    const date = value.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/)
+    if (date) {
+      values.push(Number(date[1]), Number(date[2]))
+      if (date[3]) values.push(Number(date[3]))
+    }
+    return
+  }
   if (Array.isArray(value)) {
     for (const item of value) numericValues(item, values, key)
     return

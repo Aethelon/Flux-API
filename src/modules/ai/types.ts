@@ -5,6 +5,7 @@ export interface SanitizedMetric {
   key: string
   entityType: string
   entityId: string | null
+  entityName: string | null
   calculationVersion: string
   sourceFrom: string
   sourceTo: string
@@ -17,6 +18,8 @@ export interface SanitizedForecast {
   id: string
   targetType: "product_demand" | "monthly_revenue"
   productId: string | null
+  productName: string | null
+  unit: "BRL_CENTS" | "UNITS"
   method: string
   calculationVersion: string
   trainingFrom: string
@@ -31,6 +34,7 @@ export interface SanitizedForecast {
     bucketStart: string
     horizon: number
     pointEstimate: number
+    pointEstimateDisplay: string
     lowerLimit: number | null
     upperLimit: number | null
   }>
@@ -40,6 +44,7 @@ export interface SanitizedRecommendation {
   id: string
   type: string
   productId: string
+  productName: string
   calculationVersion: string
   evidenceMetrics: unknown
   proposedValue: unknown
