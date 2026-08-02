@@ -16,6 +16,16 @@ interface JsonResponse {
   body: Record<string, unknown>
 }
 
+function relativeMonthDate(monthOffset: number, day: number, hour: number): Date {
+  const now = new Date()
+  return new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth() + monthOffset,
+    day,
+    hour,
+  ))
+}
+
 void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () => {
   let app: FastifyInstance
   let adminToken: string
@@ -255,18 +265,18 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
       tenant_id: tenantId,
       cash_register_id: register.id,
       opening_operator_id: adminId,
-      opened_at: new Date("2026-01-01T09:00:00.000Z"),
+      opened_at: relativeMonthDate(-6, 1, 9),
       opening_amount_cents: 0,
       status: "closed",
       closing_operator_id: adminId,
-      closed_at: new Date("2026-06-30T18:00:00.000Z"),
+      closed_at: relativeMonthDate(0, 1, 0),
       closing_note: "Phase Three fixture",
     }).returning("id").executeTakeFirstOrThrow()
 
     const monthlyDemand = [2, 3, 4, 5, 6, 7]
     for (const [index, quantity] of monthlyDemand.entries()) {
-      const month = String(index + 1).padStart(2, "0")
-      const completedAt = new Date(`2026-${month}-15T14:00:00.000Z`)
+      const completedAt = relativeMonthDate(index - monthlyDemand.length, 15, 14)
+      const businessDate = completedAt.toISOString().slice(0, 10)
       const sale = await app.db.insertInto("sales").values({
         tenant_id: tenantId,
         business_number: index + 1,
@@ -280,7 +290,7 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
         net_amount_cents: quantity * 1_000,
         returned_amount_cents: 0,
         change_amount_cents: 0,
-        business_date: `2026-${month}-15`,
+        business_date: businessDate,
         completed_at: completedAt,
         cancelled_by: null,
         cancelled_at: null,
@@ -307,7 +317,7 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
       await app.db.insertInto("inventory_daily_snapshots").values({
         tenant_id: tenantId,
         product_id: demandProduct.id,
-        local_date: `2026-${month}-15`,
+        local_date: businessDate,
         opening: 20,
         received: 0,
         sold: quantity,
@@ -324,10 +334,11 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     }
 
     for (const day of ["20", "21", "22"]) {
+      const observedAt = relativeMonthDate(-1, Number(day), 23)
       await app.db.insertInto("inventory_daily_snapshots").values({
         tenant_id: tenantId,
         product_id: overstockProduct.id,
-        local_date: `2026-07-${day}`,
+        local_date: observedAt.toISOString().slice(0, 10),
         opening: 100,
         received: 0,
         sold: 0,
@@ -338,7 +349,7 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
         in_stock_minutes: 1_440,
         stockout_minutes: 0,
         observed_minutes: 1_440,
-        last_observed_at: new Date(`2026-07-${day}T23:59:00.000Z`),
+        last_observed_at: observedAt,
         complete: true,
       }).execute()
     }
