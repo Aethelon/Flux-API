@@ -107,6 +107,30 @@ void describe("catalog business rules", () => {
     assert.equal(written?.minimumStock, 0)
   })
 
+  void it("reports a duplicate product barcode", async () => {
+    const service = new CatalogService(repository({
+      getCategory: () => Promise.resolve(category),
+      getUnit: () => Promise.resolve(unit),
+      createProduct: () => Promise.reject(Object.assign(new Error("duplicate"), {
+        code: "23505",
+        constraint: "products_tenant_barcode_active_uidx",
+      })),
+    }))
+
+    await assert.rejects(service.createProduct(user, {
+      barcode: "7891234567890",
+      type: "finished_product",
+      name: "Duplicate barcode",
+      categoryId: category.id,
+      unitId: unit.id,
+      minimumStock: 0,
+      priceCents: 1_000,
+    }, "duplicate-barcode-key"), {
+      statusCode: 409,
+      code: "DUPLICATE_PRODUCT_BARCODE",
+    })
+  })
+
   void it("rejects fractional scale for an indivisible unit", async () => {
     const service = new CatalogService(repository({}))
 

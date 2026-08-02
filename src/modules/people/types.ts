@@ -43,7 +43,7 @@ export interface PeopleFilters {
 export interface CreateCustomerInput {
   name: string
   email?: string | null
-  phone?: string | null
+  phone: string
   notes?: string
   status?: "active" | "inactive"
   consentAt?: string | null
@@ -53,7 +53,7 @@ export interface UpdateCustomerInput {
   version: number
   name?: string
   email?: string | null
-  phone?: string | null
+  phone?: string
   notes?: string
   status?: "active" | "inactive"
   consentAt?: string | null

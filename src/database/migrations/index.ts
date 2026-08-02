@@ -15,6 +15,7 @@ import { deterministicIntelligenceMigration } from "./013-deterministic-intellig
 import { intelligenceHardeningMigration } from "./014-intelligence-hardening.js"
 import { aiExplanationMigration } from "./015-ai-explanation.js"
 import { operationalHardeningMigration } from "./016-operational-hardening.js"
+import { customerPhoneMigration } from "./017-customer-phone.js"
 
 const migrations: Record<string, Migration> = {
   "001-foundation": foundationMigration,
@@ -33,6 +34,7 @@ const migrations: Record<string, Migration> = {
   "014-intelligence-hardening": intelligenceHardeningMigration,
   "015-ai-explanation": aiExplanationMigration,
   "016-operational-hardening": operationalHardeningMigration,
+  "017-customer-phone": customerPhoneMigration,
 }
 
 export const migrationProvider: MigrationProvider = {

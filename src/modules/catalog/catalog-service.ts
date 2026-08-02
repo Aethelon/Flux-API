@@ -58,7 +58,7 @@ function staleVersion(): AppError {
   return new AppError(409, "STALE_VERSION", "The resource was changed by another request.")
 }
 
-function isUniqueViolation(error: unknown): boolean {
+function isUniqueViolation(error: unknown): error is { code: string; constraint?: string } {
   return typeof error === "object"
     && error !== null
     && "code" in error
@@ -77,6 +77,20 @@ function throwCatalogWriteError(error: unknown): never {
   throw error instanceof Error
     ? error
     : new Error("Unknown catalog persistence error", { cause: error })
+}
+
+function throwProductWriteError(error: unknown): never {
+  if (
+    isUniqueViolation(error)
+    && error.constraint === "products_tenant_barcode_active_uidx"
+  ) {
+    throw new AppError(
+      409,
+      "DUPLICATE_PRODUCT_BARCODE",
+      "Product barcode is already in use.",
+    )
+  }
+  throwCatalogWriteError(error)
 }
 
 function trimRequired(value: string, field: string): string {
@@ -369,7 +383,7 @@ export class CatalogService {
         requestHash(values),
       )
     } catch (error) {
-      throwCatalogWriteError(error)
+      throwProductWriteError(error)
     }
   }
 
@@ -438,7 +452,7 @@ export class CatalogService {
       if (!updated) throw staleVersion()
       return updated
     } catch (error) {
-      throwCatalogWriteError(error)
+      throwProductWriteError(error)
     }
   }
 

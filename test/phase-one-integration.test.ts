@@ -90,7 +90,7 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
   })
 
   void it("executes the complete operational flow with permissions and reversals", async () => {
-    const employeePassword = "integration-employee-password"
+    const employeePassword = "test1234"
     const employee = await request("POST", "/api/v1/employees", adminToken, {
       name: "Integration Employee",
       email: `employee-${randomUUID()}@phase-one.test`,
@@ -98,7 +98,6 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
       password: employeePassword,
     }, randomUUID())
     assert.equal(employee.statusCode, 201)
-    const employeeId = String(employee.body.id)
     const employeeLogin = await app.inject({
       method: "POST",
       url: "/api/v1/auth/login",
@@ -114,26 +113,8 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
     assert.equal((await request("GET", "/api/v1/cash-sessions", employeeToken)).statusCode, 403)
     assert.equal((await request("GET", "/api/v1/suppliers", employeeToken)).statusCode, 403)
 
-    const register = await request("POST", "/api/v1/cash-registers", adminToken, {
-      code: `register-${randomUUID().slice(0, 8)}`,
-      name: "Integration Register",
-    }, randomUUID())
-    assert.equal(register.statusCode, 201)
-    const assignment = await request(
-      "POST",
-      "/api/v1/cash-register-assignments",
-      adminToken,
-      {
-        userId: employeeId,
-        registerId: register.body.id,
-        reason: "Integration assignment",
-      },
-      randomUUID(),
-    )
-    assert.equal(assignment.statusCode, 201)
-    const ownRegister = await request("GET", "/api/v1/cash-registers/me", employeeToken)
-    assert.equal(ownRegister.statusCode, 200)
-    assert.equal(ownRegister.body.session, null)
+    const missingRegister = await request("GET", "/api/v1/cash-registers/me", employeeToken)
+    assert.equal(missingRegister.statusCode, 404)
     const opened = await request(
       "POST",
       "/api/v1/cash-registers/me/open",
@@ -142,11 +123,16 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
       randomUUID(),
     )
     assert.equal(opened.statusCode, 201)
+    const ownRegister = await request("GET", "/api/v1/cash-registers/me", employeeToken)
+    assert.equal(ownRegister.statusCode, 200)
+    const ownSession = ownRegister.body.session as { id: string }
+    assert.equal(ownSession.id, opened.body.id)
 
     const customerKey = randomUUID()
     const customerPayload = {
       name: "Integration Customer",
       email: "customer@phase-one.test",
+      phone: `819${String(Math.floor(Math.random() * 1_000_000)).padStart(7, "0")}`,
     }
     const customer = await request(
       "POST", "/api/v1/customers", employeeToken, customerPayload, customerKey,
@@ -156,6 +142,23 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
     )
     assert.equal(customer.statusCode, 201)
     assert.equal(replayedCustomer.body.id, customer.body.id)
+    const duplicateCustomer = await request(
+      "POST",
+      "/api/v1/customers",
+      employeeToken,
+      { name: "Duplicate Phone", phone: customerPayload.phone },
+      randomUUID(),
+    )
+    assert.equal(duplicateCustomer.statusCode, 409)
+    assert.equal(duplicateCustomer.body.code, "DUPLICATE_CUSTOMER_PHONE")
+    const customerWithoutPhone = await request(
+      "POST",
+      "/api/v1/customers",
+      employeeToken,
+      { name: "Missing Phone" },
+      randomUUID(),
+    )
+    assert.equal(customerWithoutPhone.statusCode, 400)
 
     const categoryKey = randomUUID()
     const categoryPayload = {

@@ -20,6 +20,8 @@ const NullablePhoneSchema = Type.Union([
   Type.Null(),
 ])
 
+const PhoneSchema = Type.String({ minLength: 3, maxLength: 40 })
+
 export const CustomerSchema = Type.Object({
   id: Type.String({ format: "uuid" }),
   name: Type.String(),
@@ -83,7 +85,7 @@ export const IdempotencyHeadersSchema = Type.Object(
 export const CreateCustomerBodySchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 160 }),
   email: Type.Optional(NullableEmailSchema),
-  phone: Type.Optional(NullablePhoneSchema),
+  phone: PhoneSchema,
   notes: Type.Optional(Type.String({ maxLength: 4_000 })),
   status: Type.Optional(StatusSchema),
   consentAt: Type.Optional(Type.Union([
@@ -96,7 +98,7 @@ export const UpdateCustomerBodySchema = Type.Object({
   version: Type.Integer({ minimum: 1 }),
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })),
   email: Type.Optional(NullableEmailSchema),
-  phone: Type.Optional(NullablePhoneSchema),
+  phone: Type.Optional(PhoneSchema),
   notes: Type.Optional(Type.String({ maxLength: 4_000 })),
   status: Type.Optional(StatusSchema),
   consentAt: Type.Optional(Type.Union([
@@ -111,7 +113,7 @@ export const CreateEmployeeBodySchema = Type.Object({
   phone: Type.Optional(NullablePhoneSchema),
   role: RoleSchema,
   status: Type.Optional(StatusSchema),
-  password: Type.String({ minLength: 12, maxLength: 200 }),
+  password: Type.String({ minLength: 8, maxLength: 128 }),
 }, { additionalProperties: false })
 
 export const UpdateEmployeeBodySchema = Type.Object({
@@ -121,5 +123,5 @@ export const UpdateEmployeeBodySchema = Type.Object({
   phone: Type.Optional(NullablePhoneSchema),
   role: Type.Optional(RoleSchema),
   status: Type.Optional(StatusSchema),
-  password: Type.Optional(Type.String({ minLength: 12, maxLength: 200 })),
+  password: Type.Optional(Type.String({ minLength: 8, maxLength: 128 })),
 }, { additionalProperties: false })

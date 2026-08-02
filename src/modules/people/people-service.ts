@@ -37,14 +37,14 @@ function stale(): AppError {
   return new AppError(409, "STALE_VERSION", "The resource changed. Reload and retry.")
 }
 
-function writeError(error: unknown): never {
+function writeError(error: unknown, code: string, message: string): never {
   if (
     typeof error === "object"
     && error !== null
     && "code" in error
     && error.code === "23505"
   ) {
-    throw new AppError(409, "DUPLICATE_EMPLOYEE_EMAIL", "Employee email is already in use.")
+    throw new AppError(409, code, message)
   }
   throw error
 }
@@ -70,12 +70,16 @@ export class PeopleService {
     const values: CustomerWrite = {
       name: required(input.name, "Customer name"),
       email: trimmed(input.email)?.toLowerCase() ?? null,
-      phone: trimmed(input.phone),
+      phone: required(input.phone, "Customer phone"),
       notes: input.notes?.trim() ?? "",
       status: input.status ?? "active",
       consentAt: input.consentAt ? new Date(input.consentAt) : null,
     }
-    return this.repository.createCustomer(user, values, key, hash(values))
+    try {
+      return await this.repository.createCustomer(user, values, key, hash(values))
+    } catch (error) {
+      writeError(error, "DUPLICATE_CUSTOMER_PHONE", "Customer phone is already in use.")
+    }
   }
 
   async updateCustomer(
@@ -91,24 +95,30 @@ export class PeopleService {
       email: input.email === undefined
         ? current.email
         : trimmed(input.email)?.toLowerCase() ?? null,
-      phone: input.phone === undefined ? current.phone : trimmed(input.phone),
+      phone: input.phone === undefined
+        ? required(current.phone ?? "", "Customer phone")
+        : required(input.phone, "Customer phone"),
       notes: input.notes === undefined ? current.notes : input.notes.trim(),
       status: input.status ?? current.status,
       consentAt: input.consentAt === undefined
         ? current.consentAt ? new Date(current.consentAt) : null
         : input.consentAt ? new Date(input.consentAt) : null,
     }
-    const updated = await this.repository.updateCustomer(
-      user,
-      id,
-      input.version,
-      values,
-      current,
-      key,
-      hash({ version: input.version, ...values }),
-    )
-    if (!updated) throw stale()
-    return updated
+    try {
+      const updated = await this.repository.updateCustomer(
+        user,
+        id,
+        input.version,
+        values,
+        current,
+        key,
+        hash({ version: input.version, ...values }),
+      )
+      if (!updated) throw stale()
+      return updated
+    } catch (error) {
+      writeError(error, "DUPLICATE_CUSTOMER_PHONE", "Customer phone is already in use.")
+    }
   }
 
   async archiveCustomer(
@@ -162,7 +172,7 @@ export class PeopleService {
         passwordHash: await hashPassword(input.password),
       }, key, hash(normalized))
     } catch (error) {
-      writeError(error)
+      writeError(error, "DUPLICATE_EMPLOYEE_EMAIL", "Employee email is already in use.")
     }
   }
 
@@ -216,7 +226,7 @@ export class PeopleService {
       if (!updated) throw stale()
       return updated
     } catch (error) {
-      writeError(error)
+      writeError(error, "DUPLICATE_EMPLOYEE_EMAIL", "Employee email is already in use.")
     }
   }
 

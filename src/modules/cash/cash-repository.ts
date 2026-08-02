@@ -404,14 +404,59 @@ export class KyselyCashRepository implements CashRepository {
     const id = await this.database.transaction().execute(async (transaction) => {
       const replay = await replayedEntityId(transaction, user, route, key, hash)
       if (replay) return replay
-      const assignment = await transaction.selectFrom("cash_register_assignments as assignment")
+      let assignment = await transaction.selectFrom("cash_register_assignments as assignment")
         .innerJoin("cash_registers as register", "register.id", "assignment.cash_register_id")
         .select(["register.id"]).where("assignment.tenant_id", "=", user.tenantId)
         .where("assignment.user_id", "=", user.id).where("assignment.valid_until", "is", null)
         .where("register.active", "=", true).where("register.archived_at", "is", null)
         .forUpdate(["assignment", "register"]).executeTakeFirst()
       if (!assignment) {
-        throw new AppError(409, "CASH_REGISTER_NOT_ASSIGNED", "No active register is assigned.")
+        let register = await transaction.selectFrom("cash_registers as register")
+          .leftJoin("cash_register_assignments as current_assignment", (join) => join
+            .onRef("current_assignment.cash_register_id", "=", "register.id")
+            .on("current_assignment.valid_until", "is", null))
+          .select("register.id")
+          .where("register.tenant_id", "=", user.tenantId)
+          .where("register.active", "=", true)
+          .where("register.archived_at", "is", null)
+          .where("current_assignment.id", "is", null)
+          .orderBy("register.created_at")
+          .forUpdate("register")
+          .executeTakeFirst()
+        if (!register) {
+          register = await transaction.insertInto("cash_registers").values({
+            tenant_id: user.tenantId,
+            code: `auto-${user.id}`,
+            name: `Caixa de ${user.name}`,
+            active: true,
+            created_by: user.id,
+            updated_by: user.id,
+            archived_at: null,
+          }).returning("id").executeTakeFirstOrThrow()
+          await recordDomainEvent(transaction, user, {
+            action: "cash_register.created",
+            entityType: "cash_register",
+            entityId: register.id,
+            reason: "Automatic setup on first opening.",
+            after: { code: `auto-${user.id}`, name: `Caixa de ${user.name}` },
+          })
+        }
+        const assigned = await transaction.insertInto("cash_register_assignments").values({
+          tenant_id: user.tenantId,
+          user_id: user.id,
+          cash_register_id: register.id,
+          valid_until: null,
+          assigned_by: user.id,
+          reason: "Automatic assignment on first opening.",
+        }).returning("id").executeTakeFirstOrThrow()
+        await recordDomainEvent(transaction, user, {
+          action: "cash_register.assigned",
+          entityType: "cash_register_assignment",
+          entityId: assigned.id,
+          reason: "Automatic assignment on first opening.",
+          after: { userId: user.id, registerId: register.id },
+        })
+        assignment = register
       }
       const session = await transaction.insertInto("cash_sessions").values({
         tenant_id: user.tenantId,
