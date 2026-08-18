@@ -50,7 +50,7 @@ void describe("authentication business rules", () => {
 
     await assert.rejects(
       service.login({ email: user.email, password: "wrong-password" }, metadata),
-      { statusCode: 401, code: "INVALID_CREDENTIALS" },
+      { statusCode: 401, code: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos." },
     )
     assert.equal(recorded, true)
   })
@@ -64,7 +64,7 @@ void describe("authentication business rules", () => {
 
     await assert.rejects(
       service.login({ email: "unknown@dlara.test", password: "wrong-password" }, metadata),
-      { statusCode: 401, code: "INVALID_CREDENTIALS" },
+      { statusCode: 401, code: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos." },
     )
     assert.equal(recorded, false)
   })

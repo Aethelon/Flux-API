@@ -22,7 +22,7 @@ const DUMMY_PASSWORD_HASH =
   "scrypt$v=1$N=32768$r=8$p=1$RzUIW4LvK3ZX-3WuAwaRZg$gVuv_F0qVC5Bilp8IjfSbZx28Azpup_GmyXXs6O8RLIjWBcy2dn2HSCShGxth5BbY9W-LLsIC8Uv8WfSEooNIA"
 
 function unauthorized(): AppError {
-  return new AppError(401, "UNAUTHORIZED", "Invalid or expired authentication.")
+  return new AppError(401, "UNAUTHORIZED", "Autenticação inválida ou expirada.")
 }
 
 export class AuthService {
@@ -42,7 +42,7 @@ export class AuthService {
     )
 
     if (candidates.length > 1) {
-      throw new AppError(400, "TENANT_REQUIRED", "The company identifier is required.")
+      throw new AppError(400, "TENANT_REQUIRED", "Informe o identificador da empresa.")
     }
 
     const user = candidates[0]
@@ -52,7 +52,7 @@ export class AuthService {
     )
     if (!user || !validPassword) {
       if (user) await this.repository.recordFailedLogin(user, metadata)
-      throw new AppError(401, "INVALID_CREDENTIALS", "Invalid email or password.")
+      throw new AppError(401, "INVALID_CREDENTIALS", "E-mail ou senha inválidos.")
     }
 
     const refreshToken = generateRefreshToken()
