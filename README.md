@@ -70,7 +70,6 @@ model, formulas, permission matrix, and target architecture.
 | `catalog` | Categories, measurement units, products and services, price history, cost history, decimal quantity rules, and archive constraints |
 | `inventory` | Balances, reservations, stock movements, weighted-average cost, stock counts, reversals, and daily inventory snapshots |
 | `people` | Customer and employee lifecycle, roles, credentials, status, tenant-safe lookup, and archive rules |
-| `supply` | Suppliers, product-supplier relations, purchase orders, goods receipts, receipt reversal, and purchased-stock costing |
 | `cash` | Registers, employee assignments, sessions, opening, supplies, withdrawals, closing, reconciliation, and administrator history |
 | `sales` | Atomic sales, item and payment snapshots, discounts, change, stock consumption, cancellation, and returns |
 | `service-orders` | Workflow columns, orders, board ordering, transitions, cancellation, billing state, and status history |
@@ -82,9 +81,6 @@ model, formulas, permission matrix, and target architecture.
 | `audit` | Tenant-scoped review of material state changes with sensitive-value redaction |
 | `monitoring` | Protected Prometheus metrics for HTTP traffic, jobs, outbox age, forecasts, AI cost, and backup freshness |
 | `health` | Database-independent liveness and database-backed readiness checks |
-
-Supplier and purchasing APIs are implemented for operational integration. No
-supplier-management screen is planned for the current D'lara frontend.
 
 ## Permissions
 
@@ -113,7 +109,6 @@ All business routes use the `/api/v1` prefix.
 | Catalog | `/categories`, `/units`, `/products` |
 | Inventory | `/inventory/balances`, `/inventory/movements`, `/inventory/stock-counts` |
 | People | `/customers`, `/employees` |
-| Supply | `/suppliers`, `/purchase-orders`, `/goods-receipts` |
 | Cash | `/cash-registers`, `/cash-register-assignments`, `/cash-sessions` |
 | Sales | `/sales`, `/sales/:id/returns`, `/sales/:id/cancel` |
 | Service orders | `/service-order-columns`, `/service-orders` |
@@ -209,8 +204,8 @@ SEED_DEMO_PASSWORD="<at-least-12-characters>" npm run db:seed:demo
 The seed is idempotent, refuses to run with `NODE_ENV=production`, and refreshes only
 the dedicated demonstration-user passwords when executed again.
 
-To complement an existing D'lara database with twelve months of purchases and goods
-receipts, current-month sales, historical service orders, daily inventory observations,
+To complement an existing D'lara database with twelve months of manual inventory
+entries, current-month sales, historical service orders, daily inventory observations,
 and regenerated forecasts and recommendations, run:
 
 ```bash
@@ -379,7 +374,6 @@ src/
 │   ├── catalog/
 │   ├── inventory/
 │   ├── people/
-│   ├── supply/
 │   ├── cash/
 │   ├── sales/
 │   ├── service-orders/

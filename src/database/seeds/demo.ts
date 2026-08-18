@@ -1077,61 +1077,6 @@ try {
     }
   })
 
-  const supplier = await database.transaction().execute(async (transaction) => {
-    const existing = await transaction.selectFrom("suppliers").select("id")
-      .where("tenant_id", "=", seeded.tenantId)
-      .where("tax_id", "=", "DEMO-DLARA-001")
-      .where("archived_at", "is", null)
-      .executeTakeFirst()
-    const supplierId = existing?.id ?? (
-      await transaction.insertInto("suppliers").values({
-        tenant_id: seeded.tenantId,
-        legal_name: "Fornecedor Demonstração D'lara Ltda.",
-        trade_name: "Fornecedor Demo",
-        tax_id: "DEMO-DLARA-001",
-        email: "fornecedor@demo.local",
-        phone: "(81) 3333-0000",
-        contact_name: "Contato Demonstração",
-        notes: "Fornecedor criado exclusivamente para testes locais.",
-        active: true,
-        created_by: seeded.adminId,
-        updated_by: seeded.adminId,
-        archived_at: null,
-      }).returning("id").executeTakeFirstOrThrow()
-    ).id
-    const stockProducts = await transaction.selectFrom("products")
-      .select("id")
-      .where("tenant_id", "=", seeded.tenantId)
-      .where("sku", "like", "DEMO-%")
-      .where("type", "<>", "service")
-      .where("archived_at", "is", null)
-      .execute()
-    for (const [index, product] of stockProducts.entries()) {
-      const relation = await transaction.selectFrom("product_suppliers").select("id")
-        .where("tenant_id", "=", seeded.tenantId)
-        .where("supplier_id", "=", supplierId)
-        .where("product_id", "=", product.id)
-        .where("valid_until", "is", null)
-        .executeTakeFirst()
-      if (!relation) {
-        await transaction.insertInto("product_suppliers").values({
-          tenant_id: seeded.tenantId,
-          supplier_id: supplierId,
-          product_id: product.id,
-          supplier_sku: `FORN-DEMO-${String(index + 1).padStart(3, "0")}`,
-          active: true,
-          lead_time_days: 3 + (index % 5),
-          minimum_order_quantity: 1,
-          pack_multiple: index % 3 === 0 ? 2 : 1,
-          valid_from: monthStart(-12),
-          valid_until: null,
-          created_by: seeded.adminId,
-        }).execute()
-      }
-    }
-    return { id: supplierId, productCount: stockProducts.length }
-  })
-
   const yesterday = new Date()
   yesterday.setUTCHours(0, 0, 0, 0)
   yesterday.setUTCDate(yesterday.getUTCDate() - 1)
@@ -1258,7 +1203,7 @@ try {
   }
 
   console.info(seeded.inserted
-    ? `D'lara demonstration data was created with ${String(supplier.productCount)} supplier links.`
+    ? "D'lara demonstration data was created."
     : "D'lara demonstration data already exists; passwords and analytical inputs were refreshed.")
 } finally {
   await database.destroy()

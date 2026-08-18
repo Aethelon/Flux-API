@@ -26,8 +26,8 @@ The backend, not the frontend or the language model, is the source of truth for 
 - Authentication, session renewal, and role-based authorization.
 - Tenant and tenant-setting management.
 - Employee and cash-register assignment management.
-- Products, categories, units, prices, costs, and suppliers.
-- Inventory balances, movements, reservations, stock counts, and receipts.
+- Products, categories, units, prices, and costs.
+- Inventory balances, movements, reservations, stock counts, and manual entries.
 - Customers.
 - Sales, sale items, discounts, payments, returns, and cancellations.
 - Cash-register opening, closing, sales movements, supplies, withdrawals, and reconciliation.
@@ -189,27 +189,21 @@ The names below describe required logical tables. Exact physical names may follo
 
 - `tenants`: company identity, status, creation, and archive timestamps.
 - `tenant_settings`: timezone, currency, forecast settings, service level, review period, promotion limits, retention configuration, and active AI provider.
-- `tenant_sequences`: atomic per-tenant counters for human-readable sale, order, receipt, and service-order numbers.
+- `tenant_sequences`: atomic per-tenant counters for human-readable sale and service-order numbers.
 - `users`: tenant, employee profile, name, email, phone, password hash, role, status, and archive timestamp.
 - `auth_sessions`: refresh-token hash/family, device metadata, expiration, revocation, and last use.
 - `cash_register_assignments`: user, register, validity interval, assigning admin, and reason.
 
 Assignment history must use validity intervals instead of overwriting the previous assignment.
 
-### 6.2 Catalog and supply
+### 6.2 Catalog
 
 - `categories`: tenant category hierarchy and state.
 - `units`: tenant unit code, label, divisibility, and quantity scale.
 - `products`: SKU, barcode, type (`raw_material`, `finished_product`, `packaging`, or `service`), name, description, category, unit, state, minimum stock, and current selling price.
 - `product_price_history`: product, old/new price, effective time, actor, and reason.
 - `product_cost_history`: product, cost, source, effective time, actor, and reason.
-- `suppliers`: supplier identity and contact fields.
-- `product_suppliers`: supplier-product relation, supplier SKU, active flag, configured lead time, minimum order quantity, pack multiple, and validity interval.
 - `business_calendar_events`: tenant-defined event name, recurring key, start/end dates, product/category scope, source, and archive timestamp.
-- `purchase_orders`: supplier, state, order time, expected time, creator, approval data, and optional recommendation source.
-- `purchase_order_items`: product, ordered quantity, received quantity, agreed unit cost, and supplier pack data.
-- `goods_receipts`: purchase order, receipt time, state, receiving user, supplier document reference, and reversal data.
-- `goods_receipt_items`: purchase-order item, received quantity, accepted unit cost, and lot/reference data when available.
 
 Price and cost history are required for reproducible revenue, margin, promotion, and inventory-value calculations. A missing cost is represented as unknown, never as zero.
 
@@ -432,9 +426,6 @@ Catalog and inventory:
 - `/api/v1/inventory/balances`
 - `/api/v1/inventory/movements`
 - `/api/v1/inventory/counts`
-- `/api/v1/purchase-orders`
-- `/api/v1/goods-receipts`
-- `/api/v1/suppliers`
 
 Customers and employees:
 
@@ -507,8 +498,6 @@ Typical events:
 - `service_order.status_changed`
 - `product.price_changed`
 - `product.cost_changed`
-- `purchase_order.submitted`
-- `goods_receipt.posted`
 
 ### 10.2 Scheduled jobs
 
@@ -744,7 +733,7 @@ Rules:
 
 Monthly net revenue may use the same OLS, seasonality, interval, and backtest process as demand, with currency calculations performed in decimal arithmetic.
 
-For purchased stock, the first version uses perpetual moving weighted-average cost. Before a receipt, let `q_old` be on-hand quantity at average cost `c_old`; let the accepted receipt contain `q_in` at unit cost `c_in`:
+For stock added through a manual entry, the first version uses perpetual moving weighted-average cost. Before an entry, let `q_old` be on-hand quantity at average cost `c_old`; let the accepted entry contain `q_in` at unit cost `c_in`:
 
 ```text
 new_average_cost = (q_old * c_old + q_in * c_in) / (q_old + q_in)
@@ -764,42 +753,32 @@ sigma_d = sample_standard_deviation(daily_net_demand)
 Inventory position is:
 
 ```text
-IP = on_hand + confirmed_on_order - reserved
+IP = on_hand - reserved
 ```
 
-If lead time `L` is constant in days, lead-time demand and safety stock are:
+For the configured review horizon `H`, expected demand and safety stock are:
 
 ```text
-mean_lead_demand = d_bar * L
-SS = z * sigma_d * sqrt(L)
+mean_horizon_demand = d_bar * H
+SS = z * sigma_d * sqrt(H)
 ```
 
-If historical lead time varies independently from demand:
-
-```text
-L_bar   = mean(observed_lead_time_days)
-sigma_L = sample_standard_deviation(observed_lead_time_days)
-SS = z * sqrt(L_bar * sigma_d^2 + d_bar^2 * sigma_L^2)
-```
-
-Default cycle service level is 95%, where `z = 1.645`, and is configurable per tenant or product. Supported service levels map to stored standard-normal quantiles.
+Default cycle service level is 95%, where `z = 1.645`, and is configurable per tenant. Supported service levels map to stored standard-normal quantiles.
 
 Reorder point:
 
 ```text
-ROP = expected_demand_during_lead_time + SS
+ROP = mean_horizon_demand + SS
 ```
 
-For a review period `R` days, the order-up-to target and suggestion are:
+The stock target and suggested manual entry are:
 
 ```text
-target = expected_demand_over(L + R) + SS
+target = mean_horizon_demand + SS
 Q_raw  = max(0, target - IP)
 ```
 
-When daily forecasts are available, sum forecast points over the lead and review periods instead of using only `d_bar * days`. Round `Q_raw` up to the unit scale, supplier pack multiple, and minimum order quantity. Store each rounding step.
-
-When observed supplier lead-time history is insufficient, use the configured lead time and label the result as assumption-based.
+Round `Q_raw` up to the product unit scale. The recommendation is advisory and does not change inventory.
 
 ### 12.9 Days of cover and stockout risk
 
@@ -871,7 +850,7 @@ suggested_discount = min(base_discount, max_safe_discount)
 
 No promotion is activated autonomously. When an admin explicitly applies a valid promotion recommendation, the backend changes the current price and records the old/new price, actor, reason, recommendation, audit event, and outbox event in the same transaction. The application is rejected as stale if the product price changed after the recommendation was generated.
 
-When an admin explicitly applies a valid replenishment recommendation, the backend creates and submits a purchase order linked to the recommendation, using the current supplier relation, purchase constraints, lead time, and product cost. Applying the recommendation never increases inventory; inventory changes only when the corresponding goods receipt is completed. Review-only overstock candidates record the administrator decision without changing price or stock.
+Replenishment and overstock-review recommendations record the administrator decision without changing price or stock. Inventory changes only through explicit inventory movements or confirmed stock counts.
 
 ### 12.12 Core KPI definitions
 
@@ -1149,8 +1128,8 @@ Business configurations used in a calculation are copied into the immutable run.
 
 ### Phase 1: master data and operational flows
 
-- Implement categories, units, products, price/cost history, customers, employees, suppliers, and assignments.
-- Implement purchase orders, goods receipts, inventory balances, movements, stock counts, and daily snapshots.
+- Implement categories, units, products, price/cost history, customers, employees, and assignments.
+- Implement inventory balances, movements, stock counts, and daily snapshots.
 - Implement cash registers, sessions, employee self-service open/close, and admin movements.
 - Implement sales, payments, returns, cancellation, and service orders.
 - Replace corresponding frontend mocks incrementally.

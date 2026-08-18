@@ -7,7 +7,6 @@ import type { CatalogService } from "../modules/catalog/catalog-service.js"
 import type { InventoryService } from "../modules/inventory/inventory-service.js"
 import type { StockCountService } from "../modules/inventory/stock-count-service.js"
 import type { PeopleService } from "../modules/people/people-service.js"
-import type { SupplyService } from "../modules/supply/supply-service.js"
 import type { CashService } from "../modules/cash/cash-service.js"
 import type { SalesService } from "../modules/sales/sales-service.js"
 import type { ServiceOrderService } from "../modules/service-orders/service-order-service.js"
@@ -28,7 +27,6 @@ declare module "fastify" {
     inventoryService: InventoryService
     stockCountService: StockCountService
     peopleService: PeopleService
-    supplyService: SupplyService
     cashService: CashService
     salesService: SalesService
     serviceOrderService: ServiceOrderService

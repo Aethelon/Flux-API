@@ -24,10 +24,6 @@ interface ProductRow {
   quantity_scale: number
   on_hand: string
   reserved: string
-  supplier_id: string | null
-  lead_time_days: number | null
-  minimum_order_quantity: string | null
-  pack_multiple: string | null
 }
 
 interface DailyRow {
@@ -69,11 +65,6 @@ async function products(
     .innerJoin("inventory_balances as balance", (join) => join
       .onRef("balance.product_id", "=", "product.id")
       .onRef("balance.tenant_id", "=", "product.tenant_id"))
-    .leftJoin("product_suppliers as relation", (join) => join
-      .onRef("relation.product_id", "=", "product.id")
-      .onRef("relation.tenant_id", "=", "product.tenant_id")
-      .on("relation.active", "=", true)
-      .on("relation.valid_until", "is", null))
     .select([
       "product.id",
       "product.name",
@@ -115,18 +106,12 @@ async function products(
       "unit.quantity_scale",
       "balance.on_hand",
       "balance.reserved",
-      "relation.supplier_id",
-      "relation.lead_time_days",
-      "relation.minimum_order_quantity",
-      "relation.pack_multiple",
     ])
     .where("product.tenant_id", "=", tenantId)
     .where("product.active", "=", true)
     .where("product.archived_at", "is", null)
     .where("product.type", "<>", "service")
-    .distinctOn("product.id")
     .orderBy("product.id")
-    .orderBy("relation.created_at")
     .execute()
 }
 
@@ -153,57 +138,6 @@ async function dailyObservations(
     .where("local_date", ">=", sql<string>`CURRENT_DATE - ${windowDays}::integer`)
     .orderBy("local_date")
     .execute()
-}
-
-async function observedLeadTimes(
-  database: Kysely<Database>,
-  tenantId: string,
-  productId: string,
-  supplierId: string,
-): Promise<number[]> {
-  const rows = await sql<{ lead_days: string }>`
-    SELECT EXTRACT(EPOCH FROM (
-      receipt.received_at - purchase_order.ordered_at
-    ))::numeric / 86400 AS lead_days
-    FROM goods_receipt_items AS receipt_item
-    INNER JOIN goods_receipts AS receipt
-      ON receipt.id = receipt_item.goods_receipt_id
-      AND receipt.tenant_id = receipt_item.tenant_id
-    INNER JOIN purchase_orders AS purchase_order
-      ON purchase_order.id = receipt.purchase_order_id
-      AND purchase_order.tenant_id = receipt.tenant_id
-    WHERE receipt_item.tenant_id = ${tenantId}::uuid
-      AND receipt_item.product_id = ${productId}::uuid
-      AND purchase_order.supplier_id = ${supplierId}::uuid
-      AND purchase_order.ordered_at IS NOT NULL
-      AND receipt.status = 'completed'
-      AND receipt.received_at >= purchase_order.ordered_at
-    ORDER BY receipt.received_at DESC
-    LIMIT 20
-  `.execute(database)
-  return rows.rows.map((row) => Number(row.lead_days))
-}
-
-async function onOrder(
-  database: Kysely<Database>,
-  tenantId: string,
-  productId: string,
-): Promise<number> {
-  const row = await database.selectFrom("purchase_order_items as item")
-    .innerJoin("purchase_orders as purchase_order", (join) => join
-      .onRef("purchase_order.id", "=", "item.purchase_order_id")
-      .onRef("purchase_order.tenant_id", "=", "item.tenant_id"))
-    .select((expression) => expression.fn.coalesce(
-      expression.fn.sum<string>(
-        sql`item.ordered_quantity - item.received_quantity`,
-      ),
-      sql<string>`0`,
-    ).as("quantity"))
-    .where("item.tenant_id", "=", tenantId)
-    .where("item.product_id", "=", productId)
-    .where("purchase_order.status", "in", ["submitted", "partially_received"])
-    .executeTakeFirstOrThrow()
-  return Number(row.quantity)
 }
 
 async function latestForecast(
@@ -285,30 +219,19 @@ export async function generateRecommendations(
       && product.history_cost_cents === product.current_cost_cents
       && product.cost_effective_at !== null
     const forecast = await latestForecast(database, input.tenantId, product.id)
-    const relationConfigured = product.supplier_id !== null
-      && product.lead_time_days !== null
-      && product.minimum_order_quantity !== null
-      && product.pack_multiple !== null
-    const replenishmentResult = relationConfigured
-      ? replenishment({
-          dailyDemand,
-          onHand: Number(product.on_hand),
-          reserved: Number(product.reserved),
-          onOrder: await onOrder(database, input.tenantId, product.id),
-          configuredLeadTimeDays: product.lead_time_days ?? 0,
-          observedLeadTimeDays: await observedLeadTimes(
-            database,
-            input.tenantId,
-            product.id,
-            product.supplier_id ?? "",
-          ),
-          reviewPeriodDays: settings.reviewPeriodDays,
-          serviceLevel: settings.serviceLevel,
-          quantityScale: product.quantity_scale,
-          packMultiple: Number(product.pack_multiple),
-          minimumOrderQuantity: Number(product.minimum_order_quantity),
-        })
-      : null
+    const replenishmentResult = replenishment({
+      dailyDemand,
+      onHand: Number(product.on_hand),
+      reserved: Number(product.reserved),
+      onOrder: 0,
+      configuredLeadTimeDays: settings.reviewPeriodDays,
+      observedLeadTimeDays: [],
+      reviewPeriodDays: 0,
+      serviceLevel: settings.serviceLevel,
+      quantityScale: product.quantity_scale,
+      packMultiple: 10 ** -product.quantity_scale,
+      minimumOrderQuantity: 0,
+    })
     const sourceFrom = new Date(`${firstEligible.local_date}T00:00:00Z`)
     const sourceTo = new Date(`${lastEligible.local_date}T00:00:00Z`)
     sourceTo.setUTCDate(sourceTo.getUTCDate() + 1)
@@ -325,9 +248,6 @@ export async function generateRecommendations(
       limitations: [
         "historical_daily_inventory_cost_unavailable",
         ...(forecast ? [] : ["published_demand_forecast_unavailable"]),
-        ...(replenishmentResult?.leadTimeSource === "configured"
-          ? ["configured_lead_time_assumption"]
-          : []),
         ...(stockoutAffected ? ["stockout_affected_period"] : []),
         ...(pricingReproducible ? [] : ["price_or_cost_history_unavailable"]),
       ],
@@ -376,19 +296,16 @@ export async function generateRecommendations(
       published: true,
     }).returning("id").executeTakeFirstOrThrow()
 
-    if (replenishmentResult && replenishmentResult.finalSuggestion > 0) {
+    if (replenishmentResult.finalSuggestion > 0) {
       candidates.push({
         type: "replenishment",
         productId: product.id,
         evidence,
         proposed: {
-          supplierId: product.supplier_id,
           quantity: replenishmentResult.finalSuggestion,
           rounding: {
             raw: replenishmentResult.rawSuggestion,
             scale: replenishmentResult.scaleRoundedSuggestion,
-            pack: replenishmentResult.packRoundedSuggestion,
-            minimumOrder: replenishmentResult.finalSuggestion,
           },
         },
         confidenceScore: forecast?.score ?? null,
@@ -397,8 +314,7 @@ export async function generateRecommendations(
       })
     }
     if (
-      replenishmentResult
-      && replenishmentResult.inventoryPosition > 0
+      replenishmentResult.inventoryPosition > 0
       && unitTurnover !== null
       && unitTurnover <= settings.promotionTurnoverThreshold
       && (forecast?.slope ?? 0) <= 0

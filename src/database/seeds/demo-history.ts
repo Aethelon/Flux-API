@@ -47,7 +47,7 @@ try {
       .executeTakeFirst()
 
     const inserted = dataMarker
-      ? { purchases: 0, sales: 0, serviceOrders: 0 }
+      ? { inventoryEntries: 0, sales: 0, serviceOrders: 0 }
       : await database.transaction().execute(async (transaction) => {
           const admin = await transaction.selectFrom("users").select(["id", "name"])
             .where("tenant_id", "=", tenant.id)
@@ -96,26 +96,6 @@ try {
             product.type === "service"
             || (product.type === "finished_product" && Number(product.on_hand ?? 0) > 0)
           ))
-          const supplier = await transaction.selectFrom("suppliers").select("id")
-            .where("tenant_id", "=", tenant.id)
-            .where("tax_id", "=", "DEMO-DLARA-001")
-            .where("archived_at", "is", null)
-            .executeTakeFirstOrThrow()
-          const supplierLinks = await transaction.selectFrom("product_suppliers")
-            .select([
-              "product_id",
-              "supplier_sku",
-              "pack_multiple",
-              "minimum_order_quantity",
-              "lead_time_days",
-            ])
-            .where("tenant_id", "=", tenant.id)
-            .where("supplier_id", "=", supplier.id)
-            .where("active", "=", true)
-            .where("valid_until", "is", null)
-            .execute()
-          const linksByProduct = new Map(supplierLinks.map((link) => [link.product_id, link]))
-
           if (customers.length < 4 || stockProducts.length < 2 || saleProducts.length < 2) {
             throw new Error("D'lara base demonstration data is incomplete")
           }
@@ -168,81 +148,20 @@ try {
             reversal_of_id: null,
           }).execute()
 
-          const purchaseMaximum = await transaction.selectFrom("purchase_orders")
-            .select((expression) => expression.fn.max("business_number").as("number"))
-            .where("tenant_id", "=", tenant.id)
-            .executeTakeFirst()
-          const receiptMaximum = await transaction.selectFrom("goods_receipts")
-            .select((expression) => expression.fn.max("business_number").as("number"))
-            .where("tenant_id", "=", tenant.id)
-            .executeTakeFirst()
-          let purchaseNumber = Number(purchaseMaximum?.number ?? 0)
-          let receiptNumber = Number(receiptMaximum?.number ?? 0)
-
           for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
             const month = monthStart(monthIndex - 12)
-            const orderedAt = new Date(Date.UTC(
-              month.getUTCFullYear(), month.getUTCMonth(), 5, 13,
-            ))
             const receivedAt = new Date(Date.UTC(
               month.getUTCFullYear(), month.getUTCMonth(), 9 + (monthIndex % 3), 15,
             ))
-            purchaseNumber += 1
-            receiptNumber += 1
-            const purchaseOrder = await transaction.insertInto("purchase_orders").values({
-              tenant_id: tenant.id,
-              business_number: purchaseNumber,
-              supplier_id: supplier.id,
-              status: "received",
-              ordered_at: orderedAt,
-              expected_at: receivedAt,
-              created_by: admin.id,
-              approved_by: admin.id,
-              approved_at: orderedAt,
-              cancellation_reason: null,
-              recommendation_id: null,
-              notes: "Compra da carga histórica complementar",
-              created_at: orderedAt,
-              updated_at: receivedAt,
-            }).returning("id").executeTakeFirstOrThrow()
-            const receipt = await transaction.insertInto("goods_receipts").values({
-              tenant_id: tenant.id,
-              business_number: receiptNumber,
-              purchase_order_id: purchaseOrder.id,
-              status: "completed",
-              supplier_document_reference: `NF-DEMO-${String(receiptNumber).padStart(4, "0")}`,
-              received_by: operator.id,
-              received_at: receivedAt,
-              reversed_by: null,
-              reversed_at: null,
-              reversal_reason: null,
-              created_at: receivedAt,
-            }).returning("id").executeTakeFirstOrThrow()
 
             for (let itemIndex = 0; itemIndex < 2; itemIndex += 1) {
               const product = stockProducts[
                 (monthIndex * 2 + itemIndex) % stockProducts.length
               ]
               if (!product) throw new Error("Missing stock product")
-              const link = linksByProduct.get(product.id)
-              if (!link) throw new Error(`Missing supplier link for ${product.name}`)
               const quantity = 8 + ((monthIndex + itemIndex) % 5) * 2
               const unitCost = product.current_cost_cents ?? 0
-              const item = await transaction.insertInto("purchase_order_items").values({
-                tenant_id: tenant.id,
-                purchase_order_id: purchaseOrder.id,
-                product_id: product.id,
-                product_name_snapshot: product.name,
-                unit_abbreviation_snapshot: product.abbreviation,
-                ordered_quantity: quantity,
-                received_quantity: quantity,
-                agreed_unit_cost_cents: unitCost,
-                supplier_sku_snapshot: link.supplier_sku,
-                pack_multiple_snapshot: link.pack_multiple,
-                minimum_order_quantity_snapshot: link.minimum_order_quantity,
-                created_at: orderedAt,
-              }).returning("id").executeTakeFirstOrThrow()
-              const movement = await transaction.insertInto("stock_movements").values({
+              await transaction.insertInto("stock_movements").values({
                 tenant_id: tenant.id,
                 product_id: product.id,
                 movement_type: "receipt",
@@ -250,24 +169,13 @@ try {
                 resulting_on_hand: Number(product.on_hand ?? quantity),
                 resulting_reserved: Number(product.reserved ?? 0),
                 unit_cost_snapshot_cents: unitCost,
-                source_type: "goods_receipt",
-                source_id: receipt.id,
-                source_reference: `NF-DEMO-${String(receiptNumber).padStart(4, "0")}`,
-                reason: "Recebimento da carga histórica complementar",
+                source_type: "manual_receipt",
+                source_id: null,
+                source_reference: `DEMO-ENTRY-${dateOnly(receivedAt)}-${String(itemIndex + 1)}`,
+                reason: "Entrada manual da carga histórica complementar",
                 actor_user_id: operator.id,
                 occurred_at: receivedAt,
                 reversal_of_id: null,
-              }).returning("id").executeTakeFirstOrThrow()
-              await transaction.insertInto("goods_receipt_items").values({
-                tenant_id: tenant.id,
-                goods_receipt_id: receipt.id,
-                purchase_order_item_id: item.id,
-                product_id: product.id,
-                received_quantity: quantity,
-                accepted_unit_cost_cents: unitCost,
-                lot_reference: `LOTE-${String(month.getUTCFullYear())}-${String(month.getUTCMonth() + 1).padStart(2, "0")}`,
-                stock_movement_id: movement.id,
-                created_at: receivedAt,
               }).execute()
             }
           }
@@ -494,8 +402,6 @@ try {
           for (const [sequenceName, value] of [
             ["sale", saleNumber],
             ["service_order", orderNumber],
-            ["purchase_order", purchaseNumber],
-            ["goods_receipt", receiptNumber],
           ] as const) {
             await transaction.insertInto("tenant_sequences").values({
               tenant_id: tenant.id,
@@ -520,7 +426,7 @@ try {
             reason: DATA_VERSION,
             before_json: null,
             after_json: {
-              purchases: 12,
+              inventoryEntries: 24,
               sales: saleCount,
               serviceOrders: serviceOrderCount,
             },
@@ -529,7 +435,7 @@ try {
           }).execute()
 
           return {
-            purchases: 12,
+            inventoryEntries: 24,
             sales: saleCount,
             serviceOrders: serviceOrderCount,
           }
@@ -571,26 +477,23 @@ try {
         AND sale.business_date <= ${dateOnly(yesterday)}::date
       GROUP BY item.product_id, sale.business_date
     `.execute(database)
-    const receipts = await sql<{
+    const entries = await sql<{
       product_id: string
       local_date: string
       received: string
     }>`
       SELECT
-        item.product_id,
-        (receipt.received_at AT TIME ZONE 'America/Recife')::date::text AS local_date,
-        SUM(item.received_quantity)::text AS received
-      FROM goods_receipt_items AS item
-      INNER JOIN goods_receipts AS receipt
-        ON receipt.id = item.goods_receipt_id
-        AND receipt.tenant_id = item.tenant_id
-      WHERE item.tenant_id = ${tenant.id}::uuid
-        AND receipt.status = 'completed'
-        AND (receipt.received_at AT TIME ZONE 'America/Recife')::date
+        movement.product_id,
+        (movement.occurred_at AT TIME ZONE 'America/Recife')::date::text AS local_date,
+        SUM(movement.quantity)::text AS received
+      FROM stock_movements AS movement
+      WHERE movement.tenant_id = ${tenant.id}::uuid
+        AND movement.movement_type = 'receipt'
+        AND (movement.occurred_at AT TIME ZONE 'America/Recife')::date
           >= ${dateOnly(observationStart)}::date
-        AND (receipt.received_at AT TIME ZONE 'America/Recife')::date
+        AND (movement.occurred_at AT TIME ZONE 'America/Recife')::date
           <= ${dateOnly(yesterday)}::date
-      GROUP BY item.product_id, local_date
+      GROUP BY movement.product_id, local_date
     `.execute(database)
 
     for (const product of stockProducts) {
@@ -602,7 +505,7 @@ try {
           ]),
       )
       const productReceipts = new Map(
-        receipts.rows.filter((row) => row.product_id === product.id)
+        entries.rows.filter((row) => row.product_id === product.id)
           .map((row) => [row.local_date, Number(row.received)]),
       )
       const totalNetSold = [...productSales.values()].reduce(
@@ -689,7 +592,7 @@ try {
       user_agent: null,
     }).execute()
     console.info(
-      `D'lara complementary history created: ${String(inserted.purchases)} purchases, `
+      `D'lara complementary history created: ${String(inserted.inventoryEntries)} inventory entries, `
       + `${String(inserted.sales)} sales and ${String(inserted.serviceOrders)} service orders.`,
     )
   }

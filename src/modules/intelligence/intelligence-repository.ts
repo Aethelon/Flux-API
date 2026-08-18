@@ -10,7 +10,6 @@ import {
   replayedEntityId,
   saveEntityIdempotency,
 } from "../../shared/persistence/commands.js"
-import { nextTenantSequence } from "../../shared/persistence/tenant-sequence.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import { currentCorrelationId } from "../../shared/observability/request-context.js"
 import type {
@@ -84,20 +83,6 @@ interface AppliedTarget {
 
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null
-}
-
-function quantityMatchesScale(quantity: number, scale: number): boolean {
-  const factor = 10 ** scale
-  return Math.abs((quantity * factor) - Math.round(quantity * factor)) < 1e-8
-}
-
-function quantityMatchesMultiple(quantity: number, multiple: number): boolean {
-  return multiple > 0
-    && Math.abs((quantity / multiple) - Math.round(quantity / multiple)) < 1e-8
 }
 
 function stringArray(value: unknown): string[] {
@@ -391,13 +376,6 @@ export class KyselyIntelligenceRepository implements IntelligenceRepository {
             recommendation,
             input.reason,
           )
-        } else if (recommendation.recommendation_type === "replenishment") {
-          appliedTarget = await this.applyReplenishment(
-            transaction,
-            user,
-            recommendation,
-            input.reason,
-          )
         }
       }
 
@@ -501,128 +479,6 @@ export class KyselyIntelligenceRepository implements IntelligenceRepository {
       },
     })
     return { entityType: "product", entityId: product.id }
-  }
-
-  private async applyReplenishment(
-    transaction: Kysely<Database>,
-    user: AuthenticatedUser,
-    recommendation: PendingRecommendation,
-    reason: string,
-  ): Promise<AppliedTarget> {
-    const proposed = record(recommendation.proposed_value)
-    const supplierId = stringValue(proposed.supplierId)
-    const quantity = numberValue(proposed.quantity)
-    if (!supplierId || quantity === null || quantity <= 0) {
-      throw new AppError(
-        409,
-        "RECOMMENDATION_INVALID",
-        "The replenishment recommendation is incomplete.",
-      )
-    }
-
-    const relation = await transaction.selectFrom("product_suppliers as relation")
-      .innerJoin("products as product", (join) => join
-        .onRef("product.id", "=", "relation.product_id")
-        .onRef("product.tenant_id", "=", "relation.tenant_id"))
-      .innerJoin("units as unit", (join) => join
-        .onRef("unit.id", "=", "product.unit_id")
-        .onRef("unit.tenant_id", "=", "product.tenant_id"))
-      .innerJoin("suppliers as supplier", (join) => join
-        .onRef("supplier.id", "=", "relation.supplier_id")
-        .onRef("supplier.tenant_id", "=", "relation.tenant_id"))
-      .select([
-        "relation.supplier_sku",
-        "relation.lead_time_days",
-        "relation.minimum_order_quantity",
-        "relation.pack_multiple",
-        "product.id as product_id",
-        "product.name as product_name",
-        "product.current_cost_cents",
-        "unit.abbreviation as unit_abbreviation",
-        "unit.quantity_scale",
-      ])
-      .where("relation.tenant_id", "=", user.tenantId)
-      .where("relation.product_id", "=", recommendation.product_id)
-      .where("relation.supplier_id", "=", supplierId)
-      .where("relation.active", "=", true)
-      .where("relation.valid_until", "is", null)
-      .where("product.active", "=", true)
-      .where("product.archived_at", "is", null)
-      .where("supplier.active", "=", true)
-      .where("supplier.archived_at", "is", null)
-      .forUpdate()
-      .executeTakeFirst()
-    if (!relation || relation.current_cost_cents === null) {
-      throw new AppError(
-        409,
-        "RECOMMENDATION_STALE",
-        "The product, supplier, or current cost is no longer available.",
-      )
-    }
-
-    const minimumOrderQuantity = Number(relation.minimum_order_quantity)
-    const packMultiple = Number(relation.pack_multiple)
-    if (!quantityMatchesScale(quantity, relation.quantity_scale)
-      || quantity < minimumOrderQuantity
-      || !quantityMatchesMultiple(quantity, packMultiple)) {
-      throw new AppError(
-        409,
-        "RECOMMENDATION_STALE",
-        "The recommended quantity no longer matches the current purchase rules.",
-      )
-    }
-
-    const appliedAt = new Date()
-    const expectedAt = new Date(appliedAt)
-    expectedAt.setUTCDate(expectedAt.getUTCDate() + relation.lead_time_days)
-    const businessNumber = await nextTenantSequence(
-      transaction,
-      user.tenantId,
-      "purchase_order",
-    )
-    const purchaseOrder = await transaction.insertInto("purchase_orders").values({
-      tenant_id: user.tenantId,
-      business_number: businessNumber,
-      supplier_id: supplierId,
-      status: "submitted",
-      ordered_at: appliedAt,
-      expected_at: expectedAt,
-      created_by: user.id,
-      approved_by: user.id,
-      approved_at: appliedAt,
-      cancellation_reason: null,
-      recommendation_id: recommendation.id,
-      notes: `Applied recommendation ${recommendation.id}. ${reason}`,
-    }).returning("id").executeTakeFirstOrThrow()
-    await transaction.insertInto("purchase_order_items").values({
-      tenant_id: user.tenantId,
-      purchase_order_id: purchaseOrder.id,
-      product_id: relation.product_id,
-      product_name_snapshot: relation.product_name,
-      unit_abbreviation_snapshot: relation.unit_abbreviation,
-      ordered_quantity: quantity,
-      received_quantity: 0,
-      agreed_unit_cost_cents: relation.current_cost_cents,
-      supplier_sku_snapshot: relation.supplier_sku,
-      pack_multiple_snapshot: packMultiple,
-      minimum_order_quantity_snapshot: minimumOrderQuantity,
-    }).execute()
-    await recordDomainEvent(transaction, user, {
-      action: "purchase_order.created",
-      entityType: "purchase_order",
-      entityId: purchaseOrder.id,
-      reason,
-      after: {
-        businessNumber,
-        status: "submitted",
-        supplierId,
-        recommendationId: recommendation.id,
-        productId: relation.product_id,
-        quantity,
-        expectedAt: expectedAt.toISOString(),
-      },
-    })
-    return { entityType: "purchase_order", entityId: purchaseOrder.id }
   }
 
   private async getRecommendation(

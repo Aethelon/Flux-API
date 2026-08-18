@@ -111,7 +111,13 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
 
     assert.equal((await request("GET", "/api/v1/employees", employeeToken)).statusCode, 403)
     assert.equal((await request("GET", "/api/v1/cash-sessions", employeeToken)).statusCode, 403)
-    assert.equal((await request("GET", "/api/v1/suppliers", employeeToken)).statusCode, 403)
+    for (const route of [
+      "/api/v1/suppliers",
+      "/api/v1/purchase-orders",
+      "/api/v1/goods-receipts",
+    ]) {
+      assert.equal((await request("GET", route, adminToken)).statusCode, 404)
+    }
 
     const missingRegister = await request("GET", "/api/v1/cash-registers/me", employeeToken)
     assert.equal(missingRegister.statusCode, 404)
@@ -191,69 +197,15 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
     }, randomUUID())
     assert.equal(product.statusCode, 201)
 
-    const supplier = await request("POST", "/api/v1/suppliers", adminToken, {
-      legalName: "Integration Supplier",
-      taxId: "12345678901",
+    const inventoryEntry = await request("POST", "/api/v1/inventory/movements", adminToken, {
+      productId: product.body.id,
+      type: "receipt",
+      quantity: 10,
+      unitCostCents: 500,
+      sourceReference: "INTEGRATION-ENTRY",
+      reason: "Integration inventory entry",
     }, randomUUID())
-    assert.equal(supplier.statusCode, 201)
-    const relation = await request(
-      "POST",
-      `/api/v1/suppliers/${String(supplier.body.id)}/products`,
-      adminToken,
-      {
-        productId: product.body.id,
-        leadTimeDays: 2,
-        minimumOrderQuantity: 1,
-        packMultiple: 1,
-      },
-      randomUUID(),
-    )
-    assert.equal(relation.statusCode, 201)
-    const purchase = await request("POST", "/api/v1/purchase-orders", adminToken, {
-      supplierId: supplier.body.id,
-      items: [{
-        productId: product.body.id,
-        quantity: 10,
-        agreedUnitCostCents: 500,
-      }],
-    }, randomUUID())
-    assert.equal(purchase.statusCode, 201)
-    const submitted = await request(
-      "POST",
-      `/api/v1/purchase-orders/${String(purchase.body.id)}/submit`,
-      adminToken,
-      { version: purchase.body.version },
-      randomUUID(),
-    )
-    assert.equal(submitted.statusCode, 200)
-    const purchaseItem = (submitted.body.items as Array<Record<string, unknown>>)[0]
-    assert.ok(purchaseItem)
-    const receiptPayload = {
-      purchaseOrderId: purchase.body.id,
-      supplierDocumentReference: "NF-INTEGRATION",
-      items: [{
-        purchaseOrderItemId: purchaseItem.id,
-        quantity: 10,
-        acceptedUnitCostCents: 500,
-      }],
-    }
-    const firstReceipt = await request(
-      "POST", "/api/v1/goods-receipts", adminToken, receiptPayload, randomUUID(),
-    )
-    assert.equal(firstReceipt.statusCode, 201)
-    const reversedReceipt = await request(
-      "POST",
-      `/api/v1/goods-receipts/${String(firstReceipt.body.id)}/reverse`,
-      adminToken,
-      { reason: "Integration receipt reversal" },
-      randomUUID(),
-    )
-    assert.equal(reversedReceipt.statusCode, 200)
-    assert.equal(reversedReceipt.body.status, "reversed")
-    const secondReceipt = await request(
-      "POST", "/api/v1/goods-receipts", adminToken, receiptPayload, randomUUID(),
-    )
-    assert.equal(secondReceipt.statusCode, 201)
+    assert.equal(inventoryEntry.statusCode, 201)
 
     const serviceOrder = await request("POST", "/api/v1/service-orders", employeeToken, {
       customerId: customer.body.id,
@@ -343,7 +295,7 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
     const relevantAudit = await app.db.selectFrom("audit_events")
       .select((expression) => expression.fn.countAll<string>().as("count"))
       .where("action", "in", [
-        "goods_receipt.reversed",
+        "inventory.movement_posted",
         "sale.completed",
         "sale.cancelled",
         "sale.returned",

@@ -225,33 +225,6 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
       },
     ]).execute()
 
-    const supplier = await app.db.insertInto("suppliers").values({
-      tenant_id: tenantId,
-      legal_name: "Phase Three Supplier",
-      trade_name: null,
-      tax_id: null,
-      email: null,
-      phone: null,
-      contact_name: null,
-      notes: "",
-      active: true,
-      created_by: adminId,
-      updated_by: adminId,
-      archived_at: null,
-    }).returning("id").executeTakeFirstOrThrow()
-    await app.db.insertInto("product_suppliers").values(products.map((product) => ({
-      tenant_id: tenantId,
-      supplier_id: supplier.id,
-      product_id: product.id,
-      supplier_sku: null,
-      active: true,
-      lead_time_days: 3,
-      minimum_order_quantity: 2,
-      pack_multiple: 2,
-      valid_until: null,
-      created_by: adminId,
-    }))).execute()
-
     const register = await app.db.insertInto("cash_registers").values({
       tenant_id: tenantId,
       code: `phase-three-${randomUUID().slice(0, 6)}`,
@@ -463,7 +436,7 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     const foreignRecommendation = await app.db.insertInto("recommendations").values({
       tenant_id: foreignTenant.id,
       recommendation_run_id: foreignRun.id,
-      recommendation_type: "replenishment",
+      recommendation_type: "overstock_review",
       product_id: foreignProduct.id,
       evidence_metrics: {},
       proposed_value: { quantity: 1 },
@@ -616,7 +589,6 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     assert.equal(replenishment.calculationVersion, "analytics-v1")
     const replenishmentValue = replenishment.proposedValue as Record<string, unknown>
     assert.ok(Number(replenishmentValue.quantity) > 0)
-    assert.equal(Number(replenishmentValue.quantity) % 2, 0)
     const promotion = recommendations.find((item) => item.type === "promotion")
     assert.ok(promotion)
     assert.deepEqual(promotion.proposedValue, {
@@ -627,12 +599,6 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     assert.ok(evidence.dataWindow)
     assert.ok(evidence.completeness)
     assert.ok(evidence.limitations)
-    const purchaseCountBeforeReview = await app.db.selectFrom("purchase_orders")
-      .select(({ fn }) => fn.countAll<string>().as("count"))
-      .where("tenant_id", "=", tenantId)
-      .where("recommendation_id", "is not", null)
-      .executeTakeFirstOrThrow()
-    assert.equal(Number(purchaseCountBeforeReview.count), 0)
     const promotionProductId = String(
       (promotion.product as Record<string, unknown>).id,
     )
@@ -672,28 +638,6 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     )
     assert.equal(foreignReview.statusCode, 409)
 
-    const purchaseOrder = await app.db.selectFrom("purchase_orders")
-      .select([
-        "id",
-        "status",
-        "supplier_id",
-        "approved_by",
-        "recommendation_id",
-      ])
-      .where("tenant_id", "=", tenantId)
-      .where("recommendation_id", "=", String(replenishment.id))
-      .executeTakeFirstOrThrow()
-    assert.equal(purchaseOrder.status, "submitted")
-    assert.equal(purchaseOrder.supplier_id, replenishmentValue.supplierId)
-    assert.equal(purchaseOrder.approved_by, adminId)
-    const purchaseItem = await app.db.selectFrom("purchase_order_items")
-      .select(["product_id", "ordered_quantity", "received_quantity"])
-      .where("tenant_id", "=", tenantId)
-      .where("purchase_order_id", "=", purchaseOrder.id)
-      .executeTakeFirstOrThrow()
-    assert.equal(purchaseItem.product_id, demandProductId)
-    assert.equal(Number(purchaseItem.ordered_quantity), Number(replenishmentValue.quantity))
-    assert.equal(Number(purchaseItem.received_quantity), 0)
     const balanceAfterApplication = await app.db.selectFrom("inventory_balances")
       .select("on_hand")
       .where("tenant_id", "=", tenantId)
@@ -732,10 +676,10 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
       .where("action", "in", [
         "analytics.completed",
         "recommendation.applied",
-        "purchase_order.created",
+        "recommendation.reviewed",
         "product.price_changed",
       ])
       .executeTakeFirstOrThrow()
-    assert.ok(Number(auditCount.count) >= 6)
+    assert.ok(Number(auditCount.count) >= 4)
   })
 })

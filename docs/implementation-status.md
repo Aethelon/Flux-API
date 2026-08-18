@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last verified against the frontend and backend working trees on 2026-07-25.
+Last verified against the frontend and backend working trees on 2026-08-17.
 
 ## Delivered
 
@@ -9,8 +9,6 @@ Last verified against the frontend and backend working trees on 2026-07-25.
 - Catalog, inventory, customers, employees, cash, sales, returns, service orders,
   history, dashboard, exports, deterministic intelligence, and persisted AI explanation
   flows required by the current D'lara interface.
-- Supplier and purchasing backend modules are available for operational integration.
-  No supplier-management screen is planned for the D'lara frontend.
 - PostgreSQL persistence for operational facts, historical snapshots, analytical runs,
   recommendations, AI runs, reviews, and generated output.
 - Deterministic OLS forecasts, intervals, rolling backtests, naive-baseline comparison,

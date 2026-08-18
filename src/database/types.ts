@@ -345,104 +345,6 @@ export interface CustomerTable {
   archived_at: NullableTimestamp
 }
 
-export interface SupplierTable {
-  id: Generated<string>
-  tenant_id: string
-  legal_name: string
-  trade_name: string | null
-  tax_id: string | null
-  email: string | null
-  phone: string | null
-  contact_name: string | null
-  notes: string
-  active: boolean
-  version: Generated<number>
-  created_by: string
-  updated_by: string
-  created_at: GeneratedTimestamp
-  updated_at: GeneratedTimestamp
-  archived_at: NullableTimestamp
-}
-
-export interface ProductSupplierTable {
-  id: Generated<string>
-  tenant_id: string
-  supplier_id: string
-  product_id: string
-  supplier_sku: string | null
-  active: boolean
-  lead_time_days: number
-  minimum_order_quantity: ColumnType<string, number | string, never>
-  pack_multiple: ColumnType<string, number | string, never>
-  valid_from: GeneratedTimestamp
-  valid_until: NullableTimestamp
-  created_by: string
-  created_at: GeneratedTimestamp
-}
-
-export interface PurchaseOrderTable {
-  id: Generated<string>
-  tenant_id: string
-  business_number: ColumnType<string, number | string, never>
-  supplier_id: string
-  status: "draft" | "submitted" | "partially_received" | "received" | "cancelled"
-  ordered_at: NullableTimestamp
-  expected_at: NullableTimestamp
-  created_by: string
-  approved_by: string | null
-  approved_at: NullableTimestamp
-  cancellation_reason: string | null
-  recommendation_id: string | null
-  notes: string
-  version: Generated<number>
-  created_at: GeneratedTimestamp
-  updated_at: GeneratedTimestamp
-}
-
-export interface PurchaseOrderItemTable {
-  id: Generated<string>
-  tenant_id: string
-  purchase_order_id: string
-  product_id: string
-  product_name_snapshot: string
-  unit_abbreviation_snapshot: string
-  ordered_quantity: ColumnType<string, number | string, never>
-  received_quantity: ColumnType<string, number | string, number | string>
-  agreed_unit_cost_cents: ColumnType<string, number | string, never>
-  supplier_sku_snapshot: string | null
-  pack_multiple_snapshot: ColumnType<string, number | string, never>
-  minimum_order_quantity_snapshot: ColumnType<string, number | string, never>
-  created_at: GeneratedTimestamp
-}
-
-export interface GoodsReceiptTable {
-  id: Generated<string>
-  tenant_id: string
-  business_number: ColumnType<string, number | string, never>
-  purchase_order_id: string
-  status: "completed" | "reversed"
-  supplier_document_reference: string | null
-  received_by: string
-  received_at: GeneratedTimestamp
-  reversed_by: string | null
-  reversed_at: NullableTimestamp
-  reversal_reason: string | null
-  created_at: GeneratedTimestamp
-}
-
-export interface GoodsReceiptItemTable {
-  id: Generated<string>
-  tenant_id: string
-  goods_receipt_id: string
-  purchase_order_item_id: string
-  product_id: string
-  received_quantity: ColumnType<string, number | string, never>
-  accepted_unit_cost_cents: ColumnType<string, number | string, never>
-  lot_reference: string | null
-  stock_movement_id: string
-  created_at: GeneratedTimestamp
-}
-
 export type PaymentMethod = "cash" | "credit" | "debit" | "pix"
 
 export interface CashRegisterTable {
@@ -952,12 +854,6 @@ export interface Database {
   inventory_daily_snapshots: InventoryDailySnapshotTable
   tenant_sequences: TenantSequenceTable
   customers: CustomerTable
-  suppliers: SupplierTable
-  product_suppliers: ProductSupplierTable
-  purchase_orders: PurchaseOrderTable
-  purchase_order_items: PurchaseOrderItemTable
-  goods_receipts: GoodsReceiptTable
-  goods_receipt_items: GoodsReceiptItemTable
   cash_registers: CashRegisterTable
   cash_register_assignments: CashRegisterAssignmentTable
   cash_sessions: CashSessionTable
