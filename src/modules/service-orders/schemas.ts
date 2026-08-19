@@ -79,6 +79,13 @@ export const UpdateColumnBodySchema = Type.Object({
   displayPosition: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000 })),
 }, { additionalProperties: false })
 
+export const ReorderColumnsBodySchema = Type.Object({
+  columns: Type.Array(Type.Object({
+    id: Type.String({ format: "uuid" }),
+    version: Type.Integer({ minimum: 1 }),
+  }), { minItems: 1, maxItems: 1_000 }),
+}, { additionalProperties: false })
+
 export const ArchiveBodySchema = Type.Object({
   version: Type.Integer({ minimum: 1 }),
   reason: Type.String({ minLength: 3, maxLength: 500 }),
