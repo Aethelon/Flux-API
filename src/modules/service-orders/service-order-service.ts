@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { AppError } from "../../shared/errors/app-error.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import type {
+  ColumnOrder,
   ColumnWrite,
   ServiceOrderRepository,
 } from "./service-order-repository.js"
@@ -91,6 +92,17 @@ export class ServiceOrderService {
     )
     if (!result) throw new AppError(409, "STALE_VERSION", "Column changed. Reload and retry.")
     return result
+  }
+
+  reorderColumns(
+    user: AuthenticatedUser,
+    input: { columns: ColumnOrder[] },
+    key: string,
+  ) {
+    if (input.columns.length === 0 || new Set(input.columns.map((column) => column.id)).size !== input.columns.length) {
+      throw new AppError(400, "INVALID_COLUMN_ORDER", "Column order must contain each column once.")
+    }
+    return this.repository.reorderColumns(user, input.columns, key, requestHash(input))
   }
 
   async archiveColumn(

@@ -22,6 +22,11 @@ export interface ColumnWrite {
   displayPosition: number
 }
 
+export interface ColumnOrder {
+  id: string
+  version: number
+}
+
 export interface ServiceOrderRepository {
   listColumns(user: AuthenticatedUser): Promise<ServiceOrderColumn[]>
   createColumn(
@@ -38,6 +43,12 @@ export interface ServiceOrderRepository {
     key: string,
     hash: string,
   ): Promise<ServiceOrderColumn | null>
+  reorderColumns(
+    user: AuthenticatedUser,
+    columns: ColumnOrder[],
+    key: string,
+    hash: string,
+  ): Promise<ServiceOrderColumn[]>
   archiveColumn(
     user: AuthenticatedUser,
     id: string,
@@ -222,6 +233,65 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
       return id
     })
     return result ? this.getColumn(user.tenantId, result) : null
+  }
+
+  async reorderColumns(
+    user: AuthenticatedUser,
+    columns: ColumnOrder[],
+    key: string,
+    hash: string,
+  ): Promise<ServiceOrderColumn[]> {
+    const route = "POST /api/v1/service-order-columns/reorder"
+    const firstColumnId = columns[0]?.id
+    if (!firstColumnId) {
+      throw new AppError(400, "INVALID_COLUMN_ORDER", "Column order cannot be empty.")
+    }
+    await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(transaction, user, route, key, hash)
+      if (replay) return
+
+      const current = await transaction.selectFrom("service_order_columns")
+        .select(columnSelection()).where("tenant_id", "=", user.tenantId)
+        .where("archived_at", "is", null).orderBy("display_position").orderBy("id")
+        .forUpdate().execute()
+      const requested = new Map(columns.map((column) => [column.id, column.version]))
+      if (
+        requested.size !== columns.length
+        || current.length !== columns.length
+        || current.some((column) => requested.get(column.id) !== column.version)
+      ) {
+        throw new AppError(
+          409,
+          "COLUMN_REORDER_CONFLICT",
+          "The columns changed. Reload the board and try again.",
+        )
+      }
+
+      const temporaryOffset = Math.max(...current.map((column) => column.display_position))
+        + current.length + 1
+      const updatedAt = new Date()
+      await transaction.updateTable("service_order_columns").set({
+        display_position: sql`display_position + ${temporaryOffset}`,
+      }).where("tenant_id", "=", user.tenantId).where("archived_at", "is", null).execute()
+
+      for (const [displayPosition, column] of columns.entries()) {
+        await transaction.updateTable("service_order_columns").set({
+          display_position: displayPosition,
+          updated_by: user.id,
+          updated_at: updatedAt,
+          version: sql`version + 1`,
+        }).where("tenant_id", "=", user.tenantId).where("id", "=", column.id).execute()
+      }
+
+      await recordDomainEvent(transaction, user, {
+        action: "service_order_columns.reordered",
+        entityType: "service_order_columns",
+        entityId: firstColumnId,
+        after: { columnIds: columns.map((column) => column.id) },
+      })
+      await saveEntityIdempotency(transaction, user, route, key, hash, firstColumnId, 200)
+    })
+    return this.listColumns(user)
   }
 
   async archiveColumn(

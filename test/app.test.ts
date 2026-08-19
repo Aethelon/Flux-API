@@ -64,7 +64,17 @@ void describe("HTTP foundation", () => {
     })
 
     assert.equal(response.statusCode, 400)
-    assert.equal(response.json<{ code: string }>().code, "VALIDATION_ERROR")
+    const body = response.json<{
+      code: string
+      message: string
+      fieldErrors: Array<{ field: string; message: string }>
+    }>()
+    assert.equal(body.code, "VALIDATION_ERROR")
+    assert.equal(body.message, "A solicitação contém campos inválidos.")
+    assert.deepEqual(body.fieldErrors, [
+      { field: "email", message: "deve ter o formato de e-mail." },
+      { field: "password", message: "deve ter no mínimo 8 caracteres." },
+    ])
   })
 
   void it("protects authenticated routes", async () => {

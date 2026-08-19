@@ -10,6 +10,7 @@ import {
   IdempotencyHeadersSchema,
   IdParamsSchema,
   ListQuerySchema,
+  ReorderColumnsBodySchema,
   ServiceOrderSchema,
   TransitionBodySchema,
   UpdateColumnBodySchema,
@@ -61,6 +62,17 @@ export const serviceOrderRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   }, async (request) => app.serviceOrderService.updateColumn(
     user(request.auth), request.params.id, request.body,
     request.headers["idempotency-key"],
+  ))
+
+  app.post("/service-order-columns/reorder", {
+    preHandler: app.authorize(["admin"]),
+    schema: {
+      tags: ["Service orders"], security: [{ bearerAuth: [] }],
+      headers: IdempotencyHeadersSchema, body: ReorderColumnsBodySchema,
+      response: { 200: Type.Array(ColumnSchema), ...Errors },
+    },
+  }, async (request) => app.serviceOrderService.reorderColumns(
+    user(request.auth), request.body, request.headers["idempotency-key"],
   ))
 
   app.post("/service-order-columns/:id/archive", {
