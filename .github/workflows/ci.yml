@@ -49,6 +49,7 @@ jobs:
       RUN_PHASE_THREE_INTEGRATION: 1
       RUN_PHASE_FOUR_INTEGRATION: 1
       RUN_PHASE_FIVE_INTEGRATION: 1
+      RUN_SERVICE_ORDER_COLUMNS_INTEGRATION: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v7

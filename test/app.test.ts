@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { after, before, describe, it } from "node:test"
 import type { FastifyInstance } from "fastify"
 import { buildApp } from "../src/app.js"
+import { AppError } from "../src/shared/errors/app-error.js"
 import { testConfig } from "./helpers/config.js"
 
 void describe("HTTP foundation", () => {
@@ -11,6 +12,15 @@ void describe("HTTP foundation", () => {
     app = buildApp({
       config: testConfig,
       logger: false,
+    })
+    app.get("/test/unmapped-domain-error", () => {
+      throw new AppError(409, "UNMAPPED_DOMAIN_ERROR", "Specific domain message.")
+    })
+    app.get("/test/unmapped-client-error", () => {
+      throw Object.assign(new Error("Sensitive internal message."), {
+        code: "UNMAPPED_CLIENT_ERROR",
+        statusCode: 400,
+      })
     })
     await app.ready()
   })
@@ -84,7 +94,29 @@ void describe("HTTP foundation", () => {
     })
 
     assert.equal(response.statusCode, 401)
-    assert.equal(response.json<{ code: string }>().code, "UNAUTHORIZED")
+    const body = response.json<{ code: string; message: string }>()
+    assert.equal(body.code, "UNAUTHORIZED")
+    assert.equal(body.message, "Autenticação ausente, inválida ou expirada.")
+  })
+
+  void it("preserves specific messages for unmapped domain errors", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/test/unmapped-domain-error",
+    })
+
+    assert.equal(response.statusCode, 409)
+    assert.equal(response.json<{ message: string }>().message, "Specific domain message.")
+  })
+
+  void it("sanitizes messages from generic client errors", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/test/unmapped-client-error",
+    })
+
+    assert.equal(response.statusCode, 400)
+    assert.equal(response.json<{ message: string }>().message, "Não foi possível concluir a solicitação.")
   })
 
   void it("protects the monitoring endpoint", async () => {

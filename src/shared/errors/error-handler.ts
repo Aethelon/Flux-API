@@ -79,7 +79,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
       request.errorClass = error.code
       return reply.status(error.statusCode).send({
         code: error.code,
-        message: publicMessage(error.code),
+        message: messages[error.code] ?? error.message,
         requestId: request.correlationId || request.id,
         ...(error.details === undefined ? {} : { details: error.details }),
       })

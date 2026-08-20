@@ -249,6 +249,7 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
     await this.database.transaction().execute(async (transaction) => {
       const replay = await replayedEntityId(transaction, user, route, key, hash)
       if (replay) return
+      await ensureDefaultColumns(transaction, user)
 
       const current = await transaction.selectFrom("service_order_columns")
         .select(columnSelection()).where("tenant_id", "=", user.tenantId)
