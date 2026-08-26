@@ -18,6 +18,7 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
   let app: FastifyInstance
   let adminToken: string
   let employeeToken: string
+  let operatorJobRoleId: string
 
   async function request(
     method: "GET" | "POST" | "PATCH",
@@ -62,6 +63,9 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
       timezone: "America/Recife",
       currency: "BRL",
     }).execute()
+    operatorJobRoleId = (await app.db.selectFrom("job_roles").select("id")
+      .where("tenant_id", "=", tenant.id).where("system_key", "=", "operator")
+      .executeTakeFirstOrThrow()).id
     const admin = await app.db.insertInto("users").values({
       tenant_id: tenant.id,
       name: "Integration Admin",
@@ -94,7 +98,7 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
     const employee = await request("POST", "/api/v1/employees", adminToken, {
       name: "Integration Employee",
       email: `employee-${randomUUID()}@phase-one.test`,
-      role: "funcionario",
+      jobRoleId: operatorJobRoleId,
       password: employeePassword,
     }, randomUUID())
     assert.equal(employee.statusCode, 201)
@@ -215,6 +219,74 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
       estimatedValueCents: 2_500,
     }, randomUUID())
     assert.equal(serviceOrder.statusCode, 201)
+    const serviceOrderColumns = await request(
+      "GET", "/api/v1/service-order-columns", employeeToken,
+    )
+    const columns = serviceOrderColumns.body as unknown as Array<{
+      id: string
+      semanticType: "open" | "completed" | "cancelled"
+    }>
+    const openColumn = columns.find((column) => column.semanticType === "open")
+    const completedColumn = columns.find((column) => column.semanticType === "completed")
+    const cancelledColumn = columns.find((column) => column.semanticType === "cancelled")
+    assert.ok(openColumn)
+    assert.ok(completedColumn)
+    assert.ok(cancelledColumn)
+
+    const lifecycleOrder = await request("POST", "/api/v1/service-orders", employeeToken, {
+      customerId: customer.body.id,
+      title: "Movable terminal service",
+      priority: "medium",
+      estimatedValueCents: 1_500,
+    }, randomUUID())
+    const cancelledOrder = await request(
+      "POST",
+      `/api/v1/service-orders/${String(lifecycleOrder.body.id)}/transitions`,
+      employeeToken,
+      {
+        version: lifecycleOrder.body.version,
+        columnId: cancelledColumn.id,
+        reason: "Exercise cancelled order movement.",
+      },
+      randomUUID(),
+    )
+    assert.equal(cancelledOrder.statusCode, 200)
+    assert.equal(cancelledOrder.body.status, "cancelled")
+    const completedOrder = await request(
+      "POST",
+      `/api/v1/service-orders/${String(lifecycleOrder.body.id)}/transitions`,
+      employeeToken,
+      {
+        version: cancelledOrder.body.version,
+        columnId: completedColumn.id,
+        reason: "Exercise completed order movement.",
+      },
+      randomUUID(),
+    )
+    assert.equal(completedOrder.statusCode, 200)
+    assert.equal(completedOrder.body.status, "completed")
+    const editedCompletedOrder = await request(
+      "PATCH",
+      `/api/v1/service-orders/${String(lifecycleOrder.body.id)}`,
+      employeeToken,
+      { version: completedOrder.body.version, title: "Edited completed service" },
+      randomUUID(),
+    )
+    assert.equal(editedCompletedOrder.statusCode, 200)
+    const reopenedCompletedOrder = await request(
+      "POST",
+      `/api/v1/service-orders/${String(lifecycleOrder.body.id)}/transitions`,
+      employeeToken,
+      {
+        version: editedCompletedOrder.body.version,
+        columnId: openColumn.id,
+        reason: "Reopen an unsold completed order.",
+      },
+      randomUUID(),
+    )
+    assert.equal(reopenedCompletedOrder.statusCode, 200)
+    assert.equal(reopenedCompletedOrder.body.status, "open")
+
     const serviceSale = await request("POST", "/api/v1/sales", employeeToken, {
       customerId: customer.body.id,
       items: [{ serviceOrderId: serviceOrder.body.id }],
@@ -226,6 +298,29 @@ void describe("Phase 1 PostgreSQL integration", { skip: !runIntegration }, () =>
     )
     assert.equal(billedOrder.body.status, "completed")
     assert.equal(billedOrder.body.finalSaleId, serviceSale.body.id)
+    const soldTransition = await request(
+      "POST",
+      `/api/v1/service-orders/${String(serviceOrder.body.id)}/transitions`,
+      employeeToken,
+      {
+        version: serviceOrder.body.version,
+        columnId: (serviceOrder.body.column as { id: string }).id,
+        reason: "Attempt to reopen a sold order.",
+      },
+      randomUUID(),
+    )
+    assert.equal(soldTransition.statusCode, 409)
+    assert.equal(soldTransition.body.code, "SERVICE_ORDER_ALREADY_BILLED")
+    assert.equal(soldTransition.body.message, "Esta ordem já foi vendida e não pode ser alterada.")
+    const soldUpdate = await request(
+      "PATCH",
+      `/api/v1/service-orders/${String(serviceOrder.body.id)}`,
+      employeeToken,
+      { version: serviceOrder.body.version, title: "Changed sold order" },
+      randomUUID(),
+    )
+    assert.equal(soldUpdate.statusCode, 409)
+    assert.equal(soldUpdate.body.code, "SERVICE_ORDER_ALREADY_BILLED")
     const cancelledServiceSale = await request(
       "POST",
       `/api/v1/sales/${String(serviceSale.body.id)}/cancel`,

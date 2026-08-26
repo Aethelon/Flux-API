@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import { AppError } from "../../shared/errors/app-error.js"
 import type { UserRole } from "../../database/types.js"
+import type { PermissionKey } from "../../shared/auth/permissions.js"
+import { assertAnyPermission } from "../../shared/auth/authorization.js"
 import { KyselyAuthRepository } from "./auth-repository.js"
 import { AuthService } from "./auth-service.js"
 import { authRoutes } from "./routes.js"
@@ -30,6 +32,16 @@ export function registerAuthModule(app: FastifyInstance): void {
       throw new AppError(401, "UNAUTHORIZED", "Missing authenticated user.")
     }
     authService.assertRole(request.auth, roles)
+  })
+  app.decorate("authorizePermission", (permission: PermissionKey) => async (request: FastifyRequest) => {
+    await app.authenticate(request)
+    if (!request.auth) throw new AppError(401, "UNAUTHORIZED", "Missing authenticated user.")
+    assertAnyPermission(request.auth, [permission])
+  })
+  app.decorate("authorizeAnyPermission", (permissions: readonly PermissionKey[]) => async (request: FastifyRequest) => {
+    await app.authenticate(request)
+    if (!request.auth) throw new AppError(401, "UNAUTHORIZED", "Missing authenticated user.")
+    assertAnyPermission(request.auth, permissions)
   })
 
   void app.register(authRoutes, { prefix: "/api/v1/auth" })

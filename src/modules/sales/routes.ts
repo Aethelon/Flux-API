@@ -24,9 +24,8 @@ const Errors = {
 }
 
 export const salesRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
-  app.addHook("preHandler", app.authenticate)
-
   app.post("/sales", {
+    preHandler: app.authorizePermission("pos.view"),
     schema: {
       tags: ["Sales"],
       security: [{ bearerAuth: [] }],
@@ -41,7 +40,7 @@ export const salesRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =
   )))
 
   app.get("/sales/:id", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("pos.view"),
     schema: {
       tags: ["Sales"],
       security: [{ bearerAuth: [] }],
@@ -56,6 +55,7 @@ export const salesRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =
   }, async (request) => app.salesService.get(user(request.auth).tenantId, request.params.id))
 
   app.post("/sales/:id/cancel", {
+    preHandler: app.authorizePermission("pos.view"),
     schema: {
       tags: ["Sales"],
       security: [{ bearerAuth: [] }],
@@ -72,6 +72,7 @@ export const salesRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =
   ))
 
   app.post("/sales/:id/returns", {
+    preHandler: app.authorizePermission("pos.view"),
     schema: {
       tags: ["Sales"],
       security: [{ bearerAuth: [] }],

@@ -6,6 +6,7 @@ import {
   LoginBodySchema,
   PublicUserSchema,
   RefreshBodySchema,
+  VerifyPasswordBodySchema,
 } from "./schemas.js"
 
 function userAgent(value: string | string[] | undefined): string | null {
@@ -88,7 +89,38 @@ export const authRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
         name: user.name,
         email: user.email,
         role: user.role,
+        ...(user.jobRole ? { jobRole: user.jobRole } : {}),
+        ...(user.permissions ? { permissions: user.permissions } : {}),
       }
+    },
+  )
+
+  app.post(
+    "/verify-password",
+    {
+      preHandler: app.authenticate,
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+        },
+      },
+      schema: {
+        tags: ["Authentication"],
+        security: [{ bearerAuth: [] }],
+        body: VerifyPasswordBodySchema,
+        response: {
+          204: Type.Null(),
+          400: ErrorResponseSchema,
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const user = request.auth
+      if (!user) throw new Error("Authentication hook did not set request.auth")
+      await app.authService.verifyCurrentPassword(user, request.body.password)
+      return reply.status(204).send(null)
     },
   )
 

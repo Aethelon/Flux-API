@@ -21,7 +21,7 @@ function user(auth: AuthenticatedUser | null): AuthenticatedUser {
 
 export const intelligenceRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   app.get("/intelligence/forecasts", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     schema: {
       tags: ["Intelligence"],
       security: [{ bearerAuth: [] }],
@@ -39,7 +39,7 @@ export const intelligenceRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.post("/intelligence/forecasts/runs", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     config: {
       rateLimit: {
         max: 10,
@@ -68,7 +68,7 @@ export const intelligenceRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.get("/intelligence/recommendations", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     schema: {
       tags: ["Intelligence"],
       security: [{ bearerAuth: [] }],
@@ -86,7 +86,7 @@ export const intelligenceRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.post("/intelligence/recommendations/runs", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     config: {
       rateLimit: {
         max: 10,
@@ -112,7 +112,7 @@ export const intelligenceRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.post("/intelligence/recommendations/:id/review", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     schema: {
       tags: ["Intelligence"],
       security: [{ bearerAuth: [] }],

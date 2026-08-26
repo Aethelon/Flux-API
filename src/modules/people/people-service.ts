@@ -154,11 +154,16 @@ export class PeopleService {
     input: CreateEmployeeInput,
     key: string,
   ): Promise<Employee> {
+    const jobRole = input.jobRoleId && this.repository.getAssignableJobRole
+      ? await this.repository.getAssignableJobRole(user.tenantId, input.jobRoleId)
+      : input.role ? { id: "", name: input.role, systemKey: input.role === "admin" ? "administrator" as const : "operator" as const } : null
+    if (!jobRole) throw new AppError(400, "INVALID_JOB_ROLE", "Selecione um cargo ativo.")
     const normalized = {
       name: required(input.name, "Employee name"),
       email: required(input.email, "Employee email").toLowerCase(),
       phone: trimmed(input.phone),
-      role: input.role,
+      role: jobRole.systemKey === "administrator" ? "admin" as const : "funcionario" as const,
+      jobRoleId: jobRole.id,
       status: input.status ?? "active",
       passwordFingerprint: hash(input.password),
     }
@@ -168,6 +173,7 @@ export class PeopleService {
         email: normalized.email,
         phone: normalized.phone,
         role: normalized.role,
+        jobRoleId: normalized.jobRoleId,
         status: normalized.status,
         passwordHash: await hashPassword(input.password),
       }, key, hash(normalized))
@@ -184,23 +190,35 @@ export class PeopleService {
   ): Promise<Employee> {
     const current = await this.getEmployee(user.tenantId, id)
     if (current.version !== input.version) throw stale()
-    const nextRole = input.role ?? current.role
+    const currentJobRole = current.jobRole ?? (id === user.id ? user.jobRole : undefined)
+    const jobRole = input.jobRoleId === undefined
+      ? currentJobRole ? { ...currentJobRole } : { id: "", name: current.role, systemKey: current.role === "admin" ? "administrator" as const : "operator" as const }
+      : this.repository.getAssignableJobRole ? await this.repository.getAssignableJobRole(user.tenantId, input.jobRoleId) : null
+    if (!jobRole) throw new AppError(400, "INVALID_JOB_ROLE", "Selecione um cargo ativo.")
+    const nextRole = jobRole.systemKey === "administrator" ? "admin" : "funcionario"
     const nextStatus = input.status ?? current.status
-    if (id === user.id && (nextRole !== current.role || nextStatus !== "active")) {
+    const nextEmail = input.email === undefined
+      ? current.email
+      : required(input.email, "Employee email").toLowerCase()
+    if (id === user.id && (
+      (input.jobRoleId !== undefined && jobRole.id !== currentJobRole?.id)
+      || nextRole !== current.role
+      || nextStatus !== "active"
+      || nextEmail !== current.email
+    )) {
       throw new AppError(
         409,
         "SELF_ACCESS_CHANGE_FORBIDDEN",
-        "An administrator cannot demote or deactivate their own account.",
+        "Você não pode alterar o próprio e-mail, cargo ou status.",
       )
     }
 
     const values: EmployeeWrite = {
       name: input.name === undefined ? current.name : required(input.name, "Employee name"),
-      email: input.email === undefined
-        ? current.email
-        : required(input.email, "Employee email").toLowerCase(),
+      email: nextEmail,
       phone: input.phone === undefined ? current.phone : trimmed(input.phone),
       role: nextRole,
+      jobRoleId: jobRole.id,
       status: nextStatus,
       ...(input.password ? { passwordHash: await hashPassword(input.password) } : {}),
     }
@@ -210,6 +228,7 @@ export class PeopleService {
       email: values.email,
       phone: values.phone,
       role: values.role,
+      jobRoleId: values.jobRoleId,
       status: values.status,
       passwordFingerprint: input.password ? hash(input.password) : null,
     }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { AuthenticatedUser } from "../src/modules/auth/types.js"
 import { createCsv } from "../src/modules/exports/csv.js"
+import { createSalesHistoryCsv } from "../src/modules/exports/sales-history-csv.js"
 import type { ExportRepository } from "../src/modules/exports/export-repository.js"
 import { ExportService } from "../src/modules/exports/export-service.js"
 import type {
@@ -86,6 +87,69 @@ void describe("export business rules", () => {
     assert.match(csv, /"safe"/)
     assert.match(csv, /"-900"/)
     assert.doesNotMatch(csv, /"'-900"/)
+  })
+
+  void it("formats sales history for Brazilian spreadsheets", () => {
+    const csv = createSalesHistoryCsv([{
+      id: "sale-1",
+      businessNumber: 80,
+      status: "partially_returned",
+      businessDate: "2026-08-23",
+      completedAt: "2026-08-23T18:30:00.000Z",
+      cancelledAt: null,
+      customer: null,
+      operator: { id: "operator-1", name: "Ana Silva" },
+      itemCount: 2,
+      itemNames: ["Jogo de Cama", "Bordado"],
+      paymentMethods: ["credit", "pix"],
+      hasReturns: true,
+      financial: {
+        grossAmountCents: 8990,
+        discountAmountCents: 450,
+        returnedAmountCents: 1000,
+        netRevenueCents: 7540,
+        cogsCents: 4200,
+        grossProfitCents: 3340,
+        grossMarginRate: 0.4429708223,
+        costComplete: true,
+      },
+    }], { currency: "BRL", timeZone: "America/Recife" })
+
+    const [headers, row] = csv.slice(1).trim().split("\r\n")
+    assert.ok(headers)
+    assert.ok(row)
+    assert.match(headers, /^"ID da venda";"Nº da venda"/)
+    assert.match(headers, /"Valor bruto \(BRL\)"/)
+    assert.match(row, /"Parcialmente devolvida"/)
+    assert.match(row, /"23\/08\/2026 15:30:00"/)
+    assert.match(row, /"Consumidor não identificado"/)
+    assert.match(row, /"Crédito \| Pix"/)
+    assert.match(row, /"Sim";"89,90";"4,50";"10,00";"75,40"/)
+    assert.match(row, /"44,30";"Sim"$/)
+  })
+
+  void it("keeps sales history columns aligned without financial data", () => {
+    const csv = createSalesHistoryCsv([{
+      id: "sale-without-financials",
+      businessNumber: 81,
+      status: "completed",
+      businessDate: "2026-08-23",
+      completedAt: "2026-08-23T18:30:00.000Z",
+      cancelledAt: null,
+      customer: { id: "customer-1", name: "Rafael Ribeiro" },
+      operator: { id: "operator-1", name: "Ana Silva" },
+      itemCount: 1,
+      itemNames: ["Bordado"],
+      paymentMethods: ["cash"],
+      hasReturns: false,
+    }], { currency: "BRL", timeZone: "America/Recife" })
+
+    const [headers, row] = csv.slice(1).trim().split("\r\n")
+    assert.ok(headers)
+    assert.ok(row)
+    assert.equal(headers.split(";").length, 20)
+    assert.equal(row.split(";").length, 20)
+    assert.match(row, /;"";"";"";"";"";"";"";""$/)
   })
 
   void it("reports a completed export without an artifact as expired", async () => {

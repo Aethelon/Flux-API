@@ -6,6 +6,7 @@ import { KyselyAuditRepository } from "../audit/audit-repository.js"
 import { KyselyHistoryRepository } from "../history/history-repository.js"
 import type { SaleHistoryFilters } from "../history/types.js"
 import { createCsv } from "./csv.js"
+import { createSalesHistoryCsv } from "./sales-history-csv.js"
 import type {
   AuditEventsExportInput,
   CreateExportInput,
@@ -28,6 +29,7 @@ interface Requester {
   role: UserRole
   status: "active" | "inactive"
   archived_at: Date | null
+  permissions: string[]
 }
 
 interface GeneratedExport {
@@ -54,7 +56,8 @@ function assertRequester(requester: Requester): void {
   if (requester.status !== "active" || requester.archived_at !== null) {
     throw new AppError(403, "EXPORT_REQUESTER_INACTIVE", "Export requester is inactive.")
   }
-  if (requester.role !== "admin") {
+  const allowed = requester.role === "admin"
+  if (!allowed) {
     throw new AppError(403, "FORBIDDEN", "Export permission is no longer available.")
   }
 }
@@ -90,63 +93,17 @@ async function generateSalesHistory(
       `Export exceeds the ${String(MAX_EXPORT_ROWS)} row limit.`,
     )
   }
-  const admin = requester.role === "admin"
-  const headers = [
-    "sale_id",
-    "business_number",
-    "status",
-    "business_date",
-    "completed_at",
-    "cancelled_at",
-    "customer",
-    "operator",
-    "item_count",
-    "item_names",
-    "payment_methods",
-    "has_returns",
-    ...(admin
-      ? [
-          "gross_amount_cents",
-          "discount_amount_cents",
-          "returned_amount_cents",
-          "net_revenue_cents",
-          "cogs_cents",
-          "gross_profit_cents",
-          "gross_margin_rate",
-          "cost_complete",
-        ]
-      : []),
-  ]
-  const rows = result.data.map((sale) => [
-    sale.id,
-    sale.businessNumber,
-    sale.status,
-    sale.businessDate,
-    sale.completedAt,
-    sale.cancelledAt,
-    sale.customer?.name ?? "",
-    sale.operator.name,
-    sale.itemCount,
-    sale.itemNames.join(" | "),
-    sale.paymentMethods.join(" | "),
-    sale.hasReturns,
-    ...(admin && sale.financial
-      ? [
-          sale.financial.grossAmountCents,
-          sale.financial.discountAmountCents,
-          sale.financial.returnedAmountCents,
-          sale.financial.netRevenueCents,
-          sale.financial.cogsCents,
-          sale.financial.grossProfitCents,
-          sale.financial.grossMarginRate,
-          sale.financial.costComplete,
-        ]
-      : []),
-  ])
+  const settings = await database.selectFrom("tenant_settings")
+    .select(["timezone", "currency"])
+    .where("tenant_id", "=", job.tenant_id)
+    .executeTakeFirstOrThrow()
   return {
     filename: `sales-history-${job.id}.csv`,
-    content: createCsv(headers, rows),
-    rowCount: rows.length,
+    content: createSalesHistoryCsv(result.data, {
+      currency: settings.currency,
+      timeZone: settings.timezone,
+    }),
+    rowCount: result.data.length,
   }
 }
 
@@ -272,9 +229,10 @@ async function generate(
   job: ClaimedJob,
 ): Promise<GeneratedExport> {
   const input = exportInput(job.parameters)
-  const requester = await database.selectFrom("users").select([
-    "id", "role", "status", "archived_at",
-  ]).where("tenant_id", "=", job.tenant_id)
+  const requester = await database.selectFrom("users as user").select([
+    "user.id", "user.role", "user.status", "user.archived_at",
+    sql<string[]>`COALESCE((SELECT json_agg(permission_key) FROM job_role_permissions WHERE job_role_id = "user".job_role_id), '[]'::json)`.as("permissions"),
+  ]).where("user.tenant_id", "=", job.tenant_id)
     .where("id", "=", job.requested_by).executeTakeFirst()
   if (!requester) {
     throw new AppError(403, "EXPORT_REQUESTER_NOT_FOUND", "Export requester was not found.")

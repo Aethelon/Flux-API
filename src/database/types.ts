@@ -69,11 +69,32 @@ export interface UserTable {
   phone: string | null
   password_hash: string
   role: UserRole
+  job_role_id: Generated<string>
   status: "active" | "inactive"
   version: Generated<number>
   created_at: GeneratedTimestamp
   updated_at: GeneratedTimestamp
   archived_at: NullableTimestamp
+}
+
+export interface JobRoleTable {
+  id: Generated<string>
+  tenant_id: string
+  name: string
+  description: string
+  status: "active" | "inactive"
+  system_key: "administrator" | "operator" | null
+  version: Generated<number>
+  created_at: GeneratedTimestamp
+  updated_at: GeneratedTimestamp
+  archived_at: NullableTimestamp
+}
+
+export interface JobRolePermissionTable {
+  tenant_id: string
+  job_role_id: string
+  permission_key: string
+  created_at: GeneratedTimestamp
 }
 
 export interface AuthSessionTable {
@@ -837,6 +858,8 @@ export interface Database {
   tenants: TenantTable
   tenant_settings: TenantSettingsTable
   users: UserTable
+  job_roles: JobRoleTable
+  job_role_permissions: JobRolePermissionTable
   auth_sessions: AuthSessionTable
   audit_events: AuditEventTable
   outbox_events: OutboxEventTable

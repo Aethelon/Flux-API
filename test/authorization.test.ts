@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { assertRole } from "../src/shared/auth/authorization.js"
+import { assertAnyPermission, assertRole } from "../src/shared/auth/authorization.js"
 
 const employee = {
   id: "0cc5eec0-3ff9-40b0-b7e7-d4305249a550",
@@ -28,5 +28,32 @@ void describe("role authorization", () => {
         code: "FORBIDDEN",
       },
     )
+  })
+})
+
+void describe("screen authorization", () => {
+  void it("allows a screen dependency when the employee has one accepted screen", () => {
+    assert.doesNotThrow(() => {
+      assertAnyPermission(
+        { ...employee, permissions: ["dashboard.view"] },
+        ["orders.view", "dashboard.view", "pos.view"],
+      )
+    })
+  })
+
+  void it("blocks a screen dependency when the employee has no accepted screen", () => {
+    assert.throws(
+      () => assertAnyPermission(
+        { ...employee, permissions: ["customers.view"] },
+        ["orders.view", "dashboard.view", "pos.view"],
+      ),
+      { statusCode: 403, code: "FORBIDDEN" },
+    )
+  })
+
+  void it("keeps administrators authorized independently of configured screens", () => {
+    assert.doesNotThrow(() => {
+      assertAnyPermission({ ...employee, role: "admin", permissions: [] }, ["dashboard.view"])
+    })
   })
 })

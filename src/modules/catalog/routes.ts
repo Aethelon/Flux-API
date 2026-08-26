@@ -35,11 +35,16 @@ const ErrorResponses = {
 }
 
 export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
-  app.addHook("preHandler", app.authenticate)
+  const accessSettings = app.authenticate
+  const readProducts = app.authorizeAnyPermission([
+    "inventory.view", "pos.view", "dashboard.view",
+  ])
+  const manageProducts = app.authorizePermission("inventory.view")
 
   app.get(
     "/categories",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -62,6 +67,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.get(
     "/categories/:id",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -82,6 +88,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.post(
     "/categories",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -106,6 +113,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.patch(
     "/categories/:id",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -129,6 +137,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.delete(
     "/categories/:id",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -155,6 +164,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.get(
     "/units",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -177,6 +187,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.get(
     "/units/:id",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -197,6 +208,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.post(
     "/units",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -221,6 +233,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.patch(
     "/units/:id",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -244,6 +257,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.delete(
     "/units/:id",
     {
+      preHandler: accessSettings,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -270,6 +284,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.get(
     "/products",
     {
+      preHandler: readProducts,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -300,6 +315,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.get(
     "/products/:id",
     {
+      preHandler: readProducts,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -320,6 +336,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.post(
     "/products",
     {
+      preHandler: manageProducts,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -344,6 +361,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.patch(
     "/products/:id",
     {
+      preHandler: manageProducts,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -367,6 +385,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.delete(
     "/products/:id",
     {
+      preHandler: manageProducts,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -393,6 +412,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.get(
     "/products/:id/price-history",
     {
+      preHandler: manageProducts,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],
@@ -413,6 +433,7 @@ export const catalogRoutes: FastifyPluginCallbackTypebox = (app, _options, done)
   app.get(
     "/products/:id/cost-history",
     {
+      preHandler: manageProducts,
       schema: {
         tags: ["Catalog"],
         security: [{ bearerAuth: [] }],

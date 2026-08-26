@@ -7,6 +7,7 @@ import type {
 import { AuthService } from "../src/modules/auth/auth-service.js"
 import { hashPassword } from "../src/modules/auth/password.js"
 import type { SessionMetadata } from "../src/modules/auth/types.js"
+import type { AuthenticatedUser } from "../src/modules/auth/types.js"
 import { testConfig } from "./helpers/config.js"
 
 const metadata: SessionMetadata = {
@@ -67,5 +68,31 @@ void describe("authentication business rules", () => {
       { statusCode: 401, code: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos." },
     )
     assert.equal(recorded, false)
+  })
+
+  void it("verifies the current user's password without creating a new session", async () => {
+    const passwordHash = await hashPassword("correct-password")
+    const service = new AuthService(new Proxy({
+      findPasswordHash: () => Promise.resolve(passwordHash),
+    }, {
+      get(target, property) {
+        if (property in target) return target[property as keyof typeof target]
+        return () => Promise.reject(new Error(`Unexpected repository call: ${String(property)}`))
+      },
+    }) as unknown as AuthRepository, testConfig)
+    const user = {
+      id: "0cc5eec0-3ff9-40b0-b7e7-d4305249a550",
+      tenantId: "f61dedad-7fc6-478e-8b68-9f3375efb030",
+      sessionId: "483dece1-5925-407c-a830-a1d498862be0",
+      name: "D'lara Admin",
+      email: "admin@dlara.test",
+      role: "admin",
+    } satisfies AuthenticatedUser
+
+    await assert.doesNotReject(service.verifyCurrentPassword(user, "correct-password"))
+    await assert.rejects(
+      service.verifyCurrentPassword(user, "wrong-password"),
+      { statusCode: 401, code: "INVALID_PASSWORD", message: "Senha incorreta." },
+    )
   })
 })

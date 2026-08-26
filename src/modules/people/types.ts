@@ -20,6 +20,11 @@ export interface Employee {
   email: string
   phone: string | null
   role: UserRole
+  jobRole?: {
+    id: string
+    name: string
+    systemKey: "administrator" | "operator" | null
+  }
   status: "active" | "inactive"
   version: number
   createdAt: string
@@ -63,7 +68,8 @@ export interface CreateEmployeeInput {
   name: string
   email: string
   phone?: string | null
-  role: UserRole
+  jobRoleId?: string
+  role?: UserRole
   status?: "active" | "inactive"
   password: string
 }
@@ -73,6 +79,7 @@ export interface UpdateEmployeeInput {
   name?: string
   email?: string
   phone?: string | null
+  jobRoleId?: string
   role?: UserRole
   status?: "active" | "inactive"
   password?: string

@@ -42,6 +42,11 @@ export const EmployeeSchema = Type.Object({
   email: Type.String(),
   phone: Type.Union([Type.String(), Type.Null()]),
   role: RoleSchema,
+  jobRole: Type.Optional(Type.Object({
+    id: Type.String({ format: "uuid" }),
+    name: Type.String(),
+    systemKey: Type.Union([Type.Literal("administrator"), Type.Literal("operator"), Type.Null()]),
+  })),
   status: StatusSchema,
   version: Type.Integer(),
   createdAt: Type.String({ format: "date-time" }),
@@ -111,7 +116,7 @@ export const CreateEmployeeBodySchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 160 }),
   email: Type.String({ format: "email", maxLength: 320 }),
   phone: Type.Optional(NullablePhoneSchema),
-  role: RoleSchema,
+  jobRoleId: Type.String({ format: "uuid" }),
   status: Type.Optional(StatusSchema),
   password: Type.String({ minLength: 8, maxLength: 128 }),
 }, { additionalProperties: false })
@@ -121,7 +126,7 @@ export const UpdateEmployeeBodySchema = Type.Object({
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })),
   email: Type.Optional(Type.String({ format: "email", maxLength: 320 })),
   phone: Type.Optional(NullablePhoneSchema),
-  role: Type.Optional(RoleSchema),
+  jobRoleId: Type.Optional(Type.String({ format: "uuid" })),
   status: Type.Optional(StatusSchema),
   password: Type.Optional(Type.String({ minLength: 8, maxLength: 128 })),
 }, { additionalProperties: false })

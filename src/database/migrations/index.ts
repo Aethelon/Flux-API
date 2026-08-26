@@ -17,6 +17,11 @@ import { aiExplanationMigration } from "./015-ai-explanation.js"
 import { operationalHardeningMigration } from "./016-operational-hardening.js"
 import { customerPhoneMigration } from "./017-customer-phone.js"
 import { removeSupplyMigration } from "./018-remove-supply.js"
+import { jobRolesMigration } from "./019-job-roles.js"
+import { jobRoleHardeningMigration } from "./020-job-role-hardening.js"
+import { screenAccessMigration } from "./021-screen-access.js"
+import { settingsScreenAccessMigration } from "./022-settings-screen-access.js"
+import { settingsAlwaysVisibleMigration } from "./023-settings-always-visible.js"
 
 const migrations: Record<string, Migration> = {
   "001-foundation": foundationMigration,
@@ -37,6 +42,11 @@ const migrations: Record<string, Migration> = {
   "016-operational-hardening": operationalHardeningMigration,
   "017-customer-phone": customerPhoneMigration,
   "018-remove-supply": removeSupplyMigration,
+  "019-job-roles": jobRolesMigration,
+  "020-job-role-hardening": jobRoleHardeningMigration,
+  "021-screen-access": screenAccessMigration,
+  "022-settings-screen-access": settingsScreenAccessMigration,
+  "023-settings-always-visible": settingsAlwaysVisibleMigration,
 }
 
 export const migrationProvider: MigrationProvider = {

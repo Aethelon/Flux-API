@@ -28,6 +28,7 @@ export interface EmployeeWrite {
   email: string
   phone: string | null
   role: "admin" | "funcionario"
+  jobRoleId: string
   status: "active" | "inactive"
   passwordHash?: string
 }
@@ -60,6 +61,7 @@ export interface PeopleRepository {
   ): Promise<boolean>
   listEmployees(tenantId: string, filters: PeopleFilters): Promise<Page<Employee>>
   getEmployee(tenantId: string, id: string): Promise<Employee | null>
+  getAssignableJobRole?(tenantId: string, id: string): Promise<{ id: string; name: string; systemKey: "administrator" | "operator" | null } | null>
   createEmployee(
     user: AuthenticatedUser,
     values: EmployeeWrite & { passwordHash: string },
@@ -119,6 +121,9 @@ function mapEmployee(row: {
   email: string
   phone: string | null
   role: "admin" | "funcionario"
+  job_role_id: string
+  job_role_name: string
+  job_role_system_key: "administrator" | "operator" | null
   status: "active" | "inactive"
   version: number
   created_at: Date
@@ -130,6 +135,7 @@ function mapEmployee(row: {
     email: row.email,
     phone: row.phone,
     role: row.role,
+    jobRole: { id: row.job_role_id, name: row.job_role_name, systemKey: row.job_role_system_key },
     status: row.status,
     version: row.version,
     createdAt: row.created_at.toISOString(),
@@ -155,15 +161,18 @@ function customerSelection() {
 
 function employeeSelection() {
   return [
-    "id",
-    "name",
-    "email",
-    "phone",
-    "role",
-    "status",
-    "version",
-    "created_at",
-    "updated_at",
+    "user.id",
+    "user.name",
+    "user.email",
+    "user.phone",
+    "user.role",
+    "user.job_role_id",
+    "job_role.name as job_role_name",
+    "job_role.system_key as job_role_system_key",
+    "user.status",
+    "user.version",
+    "user.created_at",
+    "user.updated_at",
   ] as const
 }
 
@@ -330,17 +339,17 @@ export class KyselyPeopleRepository implements PeopleRepository {
   }
 
   async listEmployees(tenantId: string, filters: PeopleFilters): Promise<Page<Employee>> {
-    let query = this.database.selectFrom("users").select(employeeSelection())
-      .where("tenant_id", "=", tenantId).where("archived_at", "is", null)
+    let query = this.database.selectFrom("users as user").innerJoin("job_roles as job_role", "job_role.id", "user.job_role_id").select(employeeSelection())
+      .where("user.tenant_id", "=", tenantId).where("user.archived_at", "is", null)
     let count = this.database.selectFrom("users")
       .select((expression) => expression.fn.countAll<string>().as("count"))
       .where("tenant_id", "=", tenantId).where("archived_at", "is", null)
     if (filters.search) {
       const pattern = `%${filters.search}%`
       query = query.where((expression) => expression.or([
-        expression("name", "ilike", pattern),
-        expression("email", "ilike", pattern),
-        expression("phone", "ilike", pattern),
+        expression("user.name", "ilike", pattern),
+        expression("user.email", "ilike", pattern),
+        expression("user.phone", "ilike", pattern),
       ]))
       count = count.where((expression) => expression.or([
         expression("name", "ilike", pattern),
@@ -349,11 +358,11 @@ export class KyselyPeopleRepository implements PeopleRepository {
       ]))
     }
     if (filters.status) {
-      query = query.where("status", "=", filters.status)
+      query = query.where("user.status", "=", filters.status)
       count = count.where("status", "=", filters.status)
     }
     const [rows, total] = await Promise.all([
-      query.orderBy("name").orderBy("id")
+      query.orderBy("user.name").orderBy("user.id")
         .limit(filters.pageSize).offset((filters.page - 1) * filters.pageSize).execute(),
       count.executeTakeFirstOrThrow(),
     ])
@@ -366,10 +375,16 @@ export class KyselyPeopleRepository implements PeopleRepository {
   }
 
   async getEmployee(tenantId: string, id: string): Promise<Employee | null> {
-    const row = await this.database.selectFrom("users").select(employeeSelection())
-      .where("tenant_id", "=", tenantId).where("id", "=", id)
-      .where("archived_at", "is", null).executeTakeFirst()
+    const row = await this.database.selectFrom("users as user").innerJoin("job_roles as job_role", "job_role.id", "user.job_role_id").select(employeeSelection())
+      .where("user.tenant_id", "=", tenantId).where("user.id", "=", id)
+      .where("user.archived_at", "is", null).executeTakeFirst()
     return row ? mapEmployee(row) : null
+  }
+
+  async getAssignableJobRole(tenantId: string, id: string) {
+    const role = await this.database.selectFrom("job_roles").select(["id", "name", "system_key"])
+      .where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", "active").where("archived_at", "is", null).executeTakeFirst()
+    return role ? { id: role.id, name: role.name, systemKey: role.system_key } : null
   }
 
   async createEmployee(
@@ -382,12 +397,18 @@ export class KyselyPeopleRepository implements PeopleRepository {
     const id = await this.database.transaction().execute(async (transaction) => {
       const replay = await replayedEntityId(transaction, user, route, key, hash)
       if (replay) return replay
+      const jobRole = await transaction.selectFrom("job_roles").select("id")
+        .where("tenant_id", "=", user.tenantId).where("id", "=", values.jobRoleId)
+        .where("status", "=", "active").where("archived_at", "is", null)
+        .forUpdate().executeTakeFirst()
+      if (!jobRole) throw new AppError(409, "JOB_ROLE_NOT_ASSIGNABLE", "O cargo selecionado não está mais disponível.")
       const row = await transaction.insertInto("users").values({
         tenant_id: user.tenantId,
         name: values.name,
         email: values.email,
         phone: values.phone,
         role: values.role,
+        job_role_id: values.jobRoleId,
         status: values.status,
         password_hash: values.passwordHash,
         archived_at: null,
@@ -401,6 +422,7 @@ export class KyselyPeopleRepository implements PeopleRepository {
           email: values.email,
           phone: values.phone,
           role: values.role,
+          jobRoleId: values.jobRoleId,
           status: values.status,
         },
       })
@@ -425,6 +447,11 @@ export class KyselyPeopleRepository implements PeopleRepository {
     const result = await this.database.transaction().execute(async (transaction) => {
       const replay = await replayedEntityId(transaction, user, route, key, hash)
       if (replay) return replay
+      const jobRole = await transaction.selectFrom("job_roles").select("id")
+        .where("tenant_id", "=", user.tenantId).where("id", "=", values.jobRoleId)
+        .where("status", "=", "active").where("archived_at", "is", null)
+        .forUpdate().executeTakeFirst()
+      if (!jobRole) throw new AppError(409, "JOB_ROLE_NOT_ASSIGNABLE", "O cargo selecionado não está mais disponível.")
       if (values.status === "inactive") {
         const openSession = await transaction.selectFrom("cash_sessions").select("id")
           .where("tenant_id", "=", user.tenantId).where("opening_operator_id", "=", id)
@@ -442,6 +469,7 @@ export class KyselyPeopleRepository implements PeopleRepository {
         email: values.email,
         phone: values.phone,
         role: values.role,
+        job_role_id: values.jobRoleId,
         status: values.status,
         ...(values.passwordHash ? { password_hash: values.passwordHash } : {}),
         updated_at: new Date(),
@@ -472,6 +500,7 @@ export class KyselyPeopleRepository implements PeopleRepository {
           email: values.email,
           phone: values.phone,
           role: values.role,
+          jobRoleId: values.jobRoleId,
           status: values.status,
           passwordChanged: values.passwordHash !== undefined,
         },

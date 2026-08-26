@@ -17,9 +17,14 @@ export function csvCell(value: unknown): string {
   return `"${text.replaceAll("\"", "\"\"")}"`
 }
 
-export function createCsv(headers: string[], rows: unknown[][]): string {
+export function createCsv(
+  headers: string[],
+  rows: unknown[][],
+  options: { delimiter?: "," | ";" } = {},
+): string {
+  const delimiter = options.delimiter ?? ","
   return `\uFEFF${[
-    headers.map(csvCell).join(","),
-    ...rows.map((row) => row.map(csvCell).join(",")),
+    headers.map(csvCell).join(delimiter),
+    ...rows.map((row) => row.map(csvCell).join(delimiter)),
   ].join("\r\n")}\r\n`
 }

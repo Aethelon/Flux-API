@@ -18,7 +18,7 @@ function user(auth: AuthenticatedUser | null): AuthenticatedUser {
 
 export const aiRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   app.get("/intelligence/insights", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     schema: {
       tags: ["Intelligence"],
       security: [{ bearerAuth: [] }],
@@ -36,7 +36,7 @@ export const aiRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   ))
 
   app.post("/intelligence/insights/runs", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     config: {
       rateLimit: {
         max: 5,
@@ -63,7 +63,7 @@ export const aiRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   ))
 
   app.post("/intelligence/insights/:id/review", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("intelligence.view"),
     schema: {
       tags: ["Intelligence"],
       security: [{ bearerAuth: [] }],

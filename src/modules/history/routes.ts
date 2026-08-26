@@ -15,7 +15,7 @@ function user(auth: AuthenticatedUser | null): AuthenticatedUser {
 
 export const historyRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   app.get("/history/sales", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizePermission("history.view"),
     schema: {
       tags: ["History"],
       security: [{ bearerAuth: [] }],

@@ -1,6 +1,7 @@
 import { sql, type Kysely } from "kysely"
 import type { Database, UserRole } from "../../database/types.js"
 import type { PublicUser, SessionMetadata } from "./types.js"
+import type { PermissionKey } from "../../shared/auth/permissions.js"
 
 export interface LoginUserRecord extends PublicUser {
   passwordHash: string
@@ -29,6 +30,7 @@ export interface RotateSessionInput extends CreateSessionInput {
 
 export interface AuthRepository {
   findLoginCandidates(email: string, tenantSlug?: string): Promise<LoginUserRecord[]>
+  findPasswordHash(userId: string, tenantId: string): Promise<string | null>
   recordFailedLogin(user: PublicUser, metadata: SessionMetadata): Promise<void>
   createSession(input: CreateSessionInput): Promise<string>
   findSessionByRefreshHash(refreshTokenHash: string): Promise<RefreshSessionRecord | null>
@@ -59,6 +61,10 @@ interface LoginCandidateRow {
   email: string
   role: UserRole
   password_hash: string
+  job_role_id: string
+  job_role_name: string
+  job_role_system_key: "administrator" | "operator" | null
+  permissions: string[]
 }
 
 interface SessionRow extends LoginCandidateRow {
@@ -75,6 +81,8 @@ function publicUser(row: LoginCandidateRow): PublicUser {
     name: row.name,
     email: row.email,
     role: row.role,
+    jobRole: { id: row.job_role_id, name: row.job_role_name, systemKey: row.job_role_system_key },
+    permissions: row.permissions as PermissionKey[],
   }
 }
 
@@ -115,6 +123,7 @@ export class KyselyAuthRepository implements AuthRepository {
     let query = this.database
       .selectFrom("users as user")
       .innerJoin("tenants as tenant", "tenant.id", "user.tenant_id")
+      .innerJoin("job_roles as job_role", "job_role.id", "user.job_role_id")
       .select([
         "user.id",
         "user.tenant_id",
@@ -122,6 +131,10 @@ export class KyselyAuthRepository implements AuthRepository {
         "user.email",
         "user.role",
         "user.password_hash",
+        "user.job_role_id",
+        "job_role.name as job_role_name",
+        "job_role.system_key as job_role_system_key",
+        sql<string[]>`COALESCE((SELECT json_agg(permission_key ORDER BY permission_key) FROM job_role_permissions WHERE job_role_id = "user".job_role_id), '[]'::json)`.as("permissions"),
       ])
       .where(sql<string>`lower("user"."email")`, "=", email.toLowerCase())
       .where("user.status", "=", "active")
@@ -140,6 +153,19 @@ export class KyselyAuthRepository implements AuthRepository {
       ...publicUser(row),
       passwordHash: row.password_hash,
     }))
+  }
+
+  async findPasswordHash(userId: string, tenantId: string): Promise<string | null> {
+    const row = await this.database
+      .selectFrom("users")
+      .select("password_hash")
+      .where("id", "=", userId)
+      .where("tenant_id", "=", tenantId)
+      .where("status", "=", "active")
+      .where("archived_at", "is", null)
+      .executeTakeFirst()
+
+    return row?.password_hash ?? null
   }
 
   async recordFailedLogin(user: PublicUser, metadata: SessionMetadata): Promise<void> {
@@ -198,6 +224,7 @@ export class KyselyAuthRepository implements AuthRepository {
       .selectFrom("auth_sessions as session")
       .innerJoin("users as user", "user.id", "session.user_id")
       .innerJoin("tenants as tenant", "tenant.id", "session.tenant_id")
+      .innerJoin("job_roles as job_role", "job_role.id", "user.job_role_id")
       .select([
         "user.id",
         "user.tenant_id",
@@ -205,6 +232,10 @@ export class KyselyAuthRepository implements AuthRepository {
         "user.email",
         "user.role",
         "user.password_hash",
+        "user.job_role_id",
+        "job_role.name as job_role_name",
+        "job_role.system_key as job_role_system_key",
+        sql<string[]>`COALESCE((SELECT json_agg(permission_key ORDER BY permission_key) FROM job_role_permissions WHERE job_role_id = "user".job_role_id), '[]'::json)`.as("permissions"),
         "session.id as session_id",
         "session.family_id",
         "session.expires_at",
@@ -363,12 +394,17 @@ export class KyselyAuthRepository implements AuthRepository {
       .selectFrom("auth_sessions as session")
       .innerJoin("users as user", "user.id", "session.user_id")
       .innerJoin("tenants as tenant", "tenant.id", "session.tenant_id")
+      .innerJoin("job_roles as job_role", "job_role.id", "user.job_role_id")
       .select([
         "user.id",
         "user.tenant_id",
         "user.name",
         "user.email",
         "user.role",
+        "user.job_role_id",
+        "job_role.name as job_role_name",
+        "job_role.system_key as job_role_system_key",
+        sql<string[]>`COALESCE((SELECT json_agg(permission_key ORDER BY permission_key) FROM job_role_permissions WHERE job_role_id = "user".job_role_id), '[]'::json)`.as("permissions"),
         "session.id as session_id",
       ])
       .where("user.id", "=", userId)
@@ -391,6 +427,8 @@ export class KyselyAuthRepository implements AuthRepository {
       name: row.name,
       email: row.email,
       role: row.role,
+      jobRole: { id: row.job_role_id, name: row.job_role_name, systemKey: row.job_role_system_key },
+      permissions: row.permissions as PermissionKey[],
     }
   }
 }

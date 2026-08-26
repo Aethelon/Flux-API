@@ -1,4 +1,11 @@
 import type { UserRole } from "../../database/types.js"
+import type { PermissionKey } from "../../shared/auth/permissions.js"
+
+export interface AuthJobRole {
+  id: string
+  name: string
+  systemKey: "administrator" | "operator" | null
+}
 
 export interface AuthenticatedUser {
   id: string
@@ -7,6 +14,8 @@ export interface AuthenticatedUser {
   name: string
   email: string
   role: UserRole
+  jobRole?: AuthJobRole
+  permissions?: PermissionKey[]
 }
 
 export interface PublicUser {
@@ -15,6 +24,8 @@ export interface PublicUser {
   name: string
   email: string
   role: UserRole
+  jobRole?: AuthJobRole
+  permissions?: PermissionKey[]
 }
 
 export interface SessionMetadata {

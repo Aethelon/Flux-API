@@ -31,8 +31,12 @@ const Errors = {
 }
 
 export const peopleRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
+  const readCustomers = app.authorizeAnyPermission([
+    "customers.view", "orders.view", "pos.view", "history.view",
+  ])
+  const manageCustomers = app.authorizePermission("customers.view")
   app.get("/customers", {
-    preHandler: app.authenticate,
+    preHandler: readCustomers,
     schema: {
       tags: ["Customers"],
       security: [{ bearerAuth: [] }],
@@ -47,7 +51,7 @@ export const peopleRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
   }))
 
   app.get("/customers/:id", {
-    preHandler: app.authenticate,
+    preHandler: readCustomers,
     schema: {
       tags: ["Customers"],
       security: [{ bearerAuth: [] }],
@@ -57,7 +61,7 @@ export const peopleRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
   }, async (request) => app.peopleService.getCustomer(user(request.auth).tenantId, request.params.id))
 
   app.post("/customers", {
-    preHandler: app.authenticate,
+    preHandler: manageCustomers,
     schema: {
       tags: ["Customers"],
       security: [{ bearerAuth: [] }],
@@ -72,7 +76,7 @@ export const peopleRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
   )))
 
   app.patch("/customers/:id", {
-    preHandler: app.authenticate,
+    preHandler: manageCustomers,
     schema: {
       tags: ["Customers"],
       security: [{ bearerAuth: [] }],
@@ -89,7 +93,7 @@ export const peopleRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
   ))
 
   app.delete("/customers/:id", {
-    preHandler: app.authenticate,
+    preHandler: manageCustomers,
     schema: {
       tags: ["Customers"],
       security: [{ bearerAuth: [] }],

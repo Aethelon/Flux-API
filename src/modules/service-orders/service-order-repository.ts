@@ -543,11 +543,11 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
         .where("tenant_id", "=", user.tenantId).where("id", "=", id)
         .forUpdate().executeTakeFirst()
       if (!current) return null
+      if (current.final_sale_id) {
+        throw new AppError(409, "SERVICE_ORDER_ALREADY_BILLED", "A billed order cannot be edited.")
+      }
       if (current.version !== input.version) {
         throw new AppError(409, "STALE_VERSION", "Service order changed. Reload and retry.")
-      }
-      if (current.current_status !== "open") {
-        throw new AppError(409, "TERMINAL_SERVICE_ORDER", "A completed order cannot be edited.")
       }
       const customerId = input.customerId ?? current.customer_id
       const customer = await transaction.selectFrom("customers").select(["id", "name"])
@@ -600,11 +600,11 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
       ]).where("tenant_id", "=", user.tenantId).where("id", "=", id)
         .forUpdate().executeTakeFirst()
       if (!current) throw new AppError(404, "SERVICE_ORDER_NOT_FOUND", "Service order was not found.")
+      if (current.final_sale_id) {
+        throw new AppError(409, "SERVICE_ORDER_ALREADY_BILLED", "A billed order cannot transition.")
+      }
       if (current.version !== input.version) {
         throw new AppError(409, "STALE_VERSION", "Service order changed. Reload and retry.")
-      }
-      if (current.current_status !== "open") {
-        throw new AppError(409, "TERMINAL_SERVICE_ORDER", "Terminal service orders cannot transition.")
       }
       if (current.current_column_id === input.columnId) {
         throw new AppError(409, "SAME_SERVICE_ORDER_COLUMN", "Service order is already in this column.")
@@ -614,9 +614,6 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
         .where("id", "=", input.columnId).where("archived_at", "is", null)
         .executeTakeFirst()
       if (!target) throw new AppError(404, "COLUMN_NOT_FOUND", "Column was not found.")
-      if (target.semantic_type === "completed" && current.final_sale_id) {
-        throw new AppError(409, "SERVICE_ORDER_ALREADY_BILLED", "Service order is already billed.")
-      }
       const occurredAt = new Date()
       await transaction.updateTable("service_orders").set({
         current_column_id: target.id,

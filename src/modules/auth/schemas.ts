@@ -11,6 +11,12 @@ export const PublicUserSchema = Type.Object({
   name: Type.String(),
   email: Type.String({ format: "email" }),
   role: UserRoleSchema,
+  jobRole: Type.Optional(Type.Object({
+    id: Type.String({ format: "uuid" }),
+    name: Type.String(),
+    systemKey: Type.Union([Type.Literal("administrator"), Type.Literal("operator"), Type.Null()]),
+  })),
+  permissions: Type.Optional(Type.Array(Type.String())),
 })
 
 export const AuthTokensSchema = Type.Object({
@@ -30,4 +36,8 @@ export const LoginBodySchema = Type.Object({
 
 export const RefreshBodySchema = Type.Object({
   refreshToken: Type.String({ minLength: 64, maxLength: 256 }),
+})
+
+export const VerifyPasswordBodySchema = Type.Object({
+  password: Type.String({ minLength: 1, maxLength: 128 }),
 })

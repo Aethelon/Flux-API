@@ -26,6 +26,7 @@ const messages: Record<string, string> = {
   IDEMPOTENCY_KEY_REUSED: "A chave de idempotência já foi usada com dados diferentes.",
   IDEMPOTENCY_RESULT_UNAVAILABLE: "O resultado da solicitação anterior não está disponível.",
   COLUMN_REORDER_CONFLICT: "As colunas foram alteradas. Atualize o quadro e tente novamente.",
+  SERVICE_ORDER_ALREADY_BILLED: "Esta ordem já foi vendida e não pode ser alterada.",
 }
 
 function publicMessage(code: string): string {

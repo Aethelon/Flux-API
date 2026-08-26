@@ -31,6 +31,7 @@ const Errors = {
 
 export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   const admin = app.authorize(["admin"])
+  const ownCash = app.authorizeAnyPermission(["cash.view", "pos.view"])
 
   app.get("/cash-registers", {
     preHandler: admin,
@@ -88,7 +89,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
   )))
 
   app.get("/cash-registers/me", {
-    preHandler: app.authenticate,
+    preHandler: ownCash,
     schema: {
       tags: ["Cash"], security: [{ bearerAuth: [] }],
       response: {
@@ -98,7 +99,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
   }, async (request) => app.cashService.myRegister(user(request.auth)))
 
   app.post("/cash-registers/me/open", {
-    preHandler: app.authenticate,
+    preHandler: ownCash,
     schema: {
       tags: ["Cash"], security: [{ bearerAuth: [] }], headers: IdempotencyHeadersSchema,
       body: OpenSessionBodySchema, response: { 201: SessionSchema, ...Errors },
@@ -109,7 +110,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
 
   for (const operation of ["supplies", "withdrawals"] as const) {
     app.post(`/cash-registers/me/${operation}`, {
-      preHandler: app.authenticate,
+      preHandler: ownCash,
       schema: {
         tags: ["Cash"], security: [{ bearerAuth: [] }], headers: IdempotencyHeadersSchema,
         body: CashAmountBodySchema, response: { 200: SessionSchema, ...Errors },
@@ -126,7 +127,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
   }
 
   app.post("/cash-registers/me/close", {
-    preHandler: app.authenticate,
+    preHandler: ownCash,
     schema: {
       tags: ["Cash"], security: [{ bearerAuth: [] }], headers: IdempotencyHeadersSchema,
       body: CloseSessionBodySchema, response: { 200: SessionSchema, ...Errors },
@@ -136,7 +137,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
   ))
 
   app.get("/cash-sessions/current", {
-    preHandler: app.authenticate,
+    preHandler: ownCash,
     schema: {
       tags: ["Cash"], security: [{ bearerAuth: [] }],
       response: { 200: SessionSchema, 401: ErrorResponseSchema, 404: ErrorResponseSchema },
@@ -144,7 +145,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
   }, async (request) => app.cashService.current(user(request.auth)))
 
   app.post("/cash-sessions/open", {
-    preHandler: app.authenticate,
+    preHandler: ownCash,
     schema: {
       tags: ["Cash"], security: [{ bearerAuth: [] }], headers: IdempotencyHeadersSchema,
       body: OpenSessionBodySchema, response: { 201: SessionSchema, ...Errors },
@@ -154,7 +155,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
   )))
 
   app.post("/cash-sessions/current/movements", {
-    preHandler: app.authenticate,
+    preHandler: ownCash,
     schema: {
       tags: ["Cash"], security: [{ bearerAuth: [] }], headers: IdempotencyHeadersSchema,
       body: ManualMovementBodySchema, response: { 200: SessionSchema, ...Errors },
@@ -164,7 +165,7 @@ export const cashRoutes: FastifyPluginCallbackTypebox = (app, _options, done) =>
   ))
 
   app.post("/cash-sessions/current/close", {
-    preHandler: app.authenticate,
+    preHandler: ownCash,
     schema: {
       tags: ["Cash"], security: [{ bearerAuth: [] }], headers: IdempotencyHeadersSchema,
       body: CloseSessionBodySchema, response: { 200: SessionSchema, ...Errors },

@@ -17,6 +17,8 @@ import type { ExportService } from "../modules/exports/export-service.js"
 import type { IntelligenceService } from "../modules/intelligence/intelligence-service.js"
 import type { AiService } from "../modules/ai/ai-service.js"
 import type { MonitoringService } from "../modules/monitoring/monitoring-service.js"
+import type { JobRoleService } from "../modules/job-roles/job-role-service.js"
+import type { PermissionKey } from "../shared/auth/permissions.js"
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -37,8 +39,11 @@ declare module "fastify" {
     intelligenceService: IntelligenceService
     aiService: AiService
     monitoringService: MonitoringService
+    jobRoleService: JobRoleService
     authenticate: (request: FastifyRequest) => Promise<void>
     authorize: (roles: readonly UserRole[]) => (request: FastifyRequest) => Promise<void>
+    authorizePermission: (permission: PermissionKey) => (request: FastifyRequest) => Promise<void>
+    authorizeAnyPermission: (permissions: readonly PermissionKey[]) => (request: FastifyRequest) => Promise<void>
   }
 
   interface FastifyRequest {

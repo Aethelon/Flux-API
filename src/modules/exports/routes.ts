@@ -19,7 +19,7 @@ function user(auth: AuthenticatedUser | null): AuthenticatedUser {
 
 export const exportRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   app.post("/exports", {
-    preHandler: app.authorize(["admin", "funcionario"]),
+    preHandler: app.authorize(["admin"]),
     config: {
       rateLimit: {
         max: 10,
@@ -46,7 +46,7 @@ export const exportRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
   )))
 
   app.get("/exports/:id", {
-    preHandler: app.authorize(["admin", "funcionario"]),
+    preHandler: app.authorize(["admin"]),
     schema: {
       tags: ["Exports"],
       security: [{ bearerAuth: [] }],
@@ -60,7 +60,7 @@ export const exportRoutes: FastifyPluginCallbackTypebox = (app, _options, done) 
   }, async (request) => app.exportService.get(user(request.auth), request.params.id))
 
   app.get("/exports/:id/download", {
-    preHandler: app.authorize(["admin", "funcionario"]),
+    preHandler: app.authorize(["admin"]),
     schema: {
       tags: ["Exports"],
       security: [{ bearerAuth: [] }],

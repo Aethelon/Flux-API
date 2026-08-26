@@ -10,7 +10,7 @@ function user(auth: AuthenticatedUser | null): AuthenticatedUser {
 
 export const dashboardRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
   app.get("/dashboard", {
-    preHandler: app.authorize(["admin"]),
+    preHandler: app.authorizeAnyPermission(["dashboard.view", "intelligence.view"]),
     schema: {
       tags: ["Dashboard"],
       security: [{ bearerAuth: [] }],

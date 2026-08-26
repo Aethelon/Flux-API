@@ -31,8 +31,12 @@ const Errors = {
 }
 
 export const serviceOrderRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
+  const readOrders = app.authorizeAnyPermission([
+    "orders.view", "dashboard.view", "pos.view", "intelligence.view",
+  ])
+  const manageOrders = app.authorizePermission("orders.view")
   app.get("/service-order-columns", {
-    preHandler: app.authenticate,
+    preHandler: readOrders,
     schema: {
       tags: ["Service orders"], security: [{ bearerAuth: [] }],
       response: { 200: Type.Array(ColumnSchema), 401: ErrorResponseSchema },
@@ -91,7 +95,7 @@ export const serviceOrderRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   })
 
   app.get("/service-orders", {
-    preHandler: app.authenticate,
+    preHandler: readOrders,
     schema: {
       tags: ["Service orders"], security: [{ bearerAuth: [] }],
       querystring: ListQuerySchema,
@@ -102,7 +106,7 @@ export const serviceOrderRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.get("/service-orders/:id", {
-    preHandler: app.authenticate,
+    preHandler: readOrders,
     schema: {
       tags: ["Service orders"], security: [{ bearerAuth: [] }],
       params: IdParamsSchema,
@@ -115,7 +119,7 @@ export const serviceOrderRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.post("/service-orders", {
-    preHandler: app.authenticate,
+    preHandler: manageOrders,
     schema: {
       tags: ["Service orders"], security: [{ bearerAuth: [] }],
       headers: IdempotencyHeadersSchema, body: CreateServiceOrderBodySchema,
@@ -128,7 +132,7 @@ export const serviceOrderRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.patch("/service-orders/:id", {
-    preHandler: app.authenticate,
+    preHandler: manageOrders,
     schema: {
       tags: ["Service orders"], security: [{ bearerAuth: [] }],
       headers: IdempotencyHeadersSchema, params: IdParamsSchema,
@@ -141,7 +145,7 @@ export const serviceOrderRoutes: FastifyPluginCallbackTypebox = (app, _options, 
   ))
 
   app.post("/service-orders/:id/transitions", {
-    preHandler: app.authenticate,
+    preHandler: manageOrders,
     schema: {
       tags: ["Service orders"], security: [{ bearerAuth: [] }],
       headers: IdempotencyHeadersSchema, params: IdParamsSchema,

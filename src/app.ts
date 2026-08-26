@@ -29,6 +29,7 @@ import { registerExportModule } from "./modules/exports/register.js"
 import { registerIntelligenceModule } from "./modules/intelligence/register.js"
 import { registerAiModule } from "./modules/ai/register.js"
 import { registerMonitoringModule } from "./modules/monitoring/register.js"
+import { registerJobRoleModule } from "./modules/job-roles/register.js"
 import { enterRequestContext } from "./shared/observability/request-context.js"
 
 interface BuildAppOptions {
@@ -83,6 +84,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     credentials: true,
   })
   void app.register(rateLimit, {
+    global: config.nodeEnv === "production",
     max: 100,
     timeWindow: "1 minute",
   })
@@ -112,6 +114,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerCatalogModule(app)
   registerInventoryModule(app)
   registerPeopleModule(app)
+  registerJobRoleModule(app)
   registerCashModule(app)
   registerSalesModule(app)
   registerServiceOrderModule(app)

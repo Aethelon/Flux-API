@@ -70,6 +70,8 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role,
+      ...(user.jobRole ? { jobRole: user.jobRole } : {}),
+      ...(user.permissions ? { permissions: user.permissions } : {}),
     }
 
     return this.tokensFor(publicUser, sessionId, refreshToken)
@@ -147,6 +149,14 @@ export class AuthService {
     if (!current) throw unauthorized()
 
     return current
+  }
+
+  async verifyCurrentPassword(user: AuthenticatedUser, password: string): Promise<void> {
+    const passwordHash = await this.repository.findPasswordHash(user.id, user.tenantId)
+    const validPassword = await verifyPassword(password, passwordHash ?? DUMMY_PASSWORD_HASH)
+    if (!passwordHash || !validPassword) {
+      throw new AppError(401, "INVALID_PASSWORD", "Senha incorreta.")
+    }
   }
 
   async logout(user: AuthenticatedUser, requestId: string): Promise<void> {

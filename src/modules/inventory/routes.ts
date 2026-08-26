@@ -26,11 +26,15 @@ const ErrorResponses = {
 }
 
 export const inventoryRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
-  app.addHook("preHandler", app.authenticate)
+  const readBalances = app.authorizeAnyPermission([
+    "inventory.view", "pos.view", "dashboard.view",
+  ])
+  const manageInventory = app.authorizePermission("inventory.view")
 
   app.get(
     "/inventory/balances",
     {
+      preHandler: readBalances,
       schema: {
         tags: ["Inventory"],
         security: [{ bearerAuth: [] }],
@@ -55,6 +59,7 @@ export const inventoryRoutes: FastifyPluginCallbackTypebox = (app, _options, don
   app.get(
     "/inventory/balances/:productId",
     {
+      preHandler: readBalances,
       schema: {
         tags: ["Inventory"],
         security: [{ bearerAuth: [] }],
@@ -74,6 +79,7 @@ export const inventoryRoutes: FastifyPluginCallbackTypebox = (app, _options, don
   app.get(
     "/inventory/movements",
     {
+      preHandler: manageInventory,
       schema: {
         tags: ["Inventory"],
         security: [{ bearerAuth: [] }],
@@ -98,6 +104,7 @@ export const inventoryRoutes: FastifyPluginCallbackTypebox = (app, _options, don
   app.post(
     "/inventory/movements",
     {
+      preHandler: manageInventory,
       schema: {
         tags: ["Inventory"],
         security: [{ bearerAuth: [] }],

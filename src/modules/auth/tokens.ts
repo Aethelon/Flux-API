@@ -28,6 +28,8 @@ export class AccessTokenService {
       name: user.name,
       email: user.email,
       role: user.role,
+      jobRole: user.jobRole,
+      permissions: user.permissions,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setSubject(user.id)
@@ -64,6 +66,8 @@ export class AccessTokenService {
       name: payload.name,
       email: payload.email,
       role: payload.role,
+      ...(typeof payload.jobRole === "object" && payload.jobRole !== null ? { jobRole: payload.jobRole as NonNullable<AuthenticatedUser["jobRole"]> } : {}),
+      ...(Array.isArray(payload.permissions) ? { permissions: payload.permissions as NonNullable<AuthenticatedUser["permissions"]> } : {}),
     }
   }
 }
