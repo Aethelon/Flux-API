@@ -64,7 +64,7 @@ export const ServiceOrderSchema = Type.Object({
 
 export const CreateColumnBodySchema = Type.Object({
   label: Type.String({ minLength: 1, maxLength: 120 }),
-  semanticType: Type.Union([Type.Literal("open"), Type.Literal("cancelled")]),
+  semanticType: Type.Literal("open"),
   colorToken: Type.String({ pattern: "^--color-[a-z0-9-]+$", maxLength: 80 }),
   displayPosition: Type.Integer({ minimum: 0, maximum: 1_000 }),
 }, { additionalProperties: false })

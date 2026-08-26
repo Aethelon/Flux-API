@@ -22,6 +22,7 @@ import { jobRoleHardeningMigration } from "./020-job-role-hardening.js"
 import { screenAccessMigration } from "./021-screen-access.js"
 import { settingsScreenAccessMigration } from "./022-settings-screen-access.js"
 import { settingsAlwaysVisibleMigration } from "./023-settings-always-visible.js"
+import { protectTerminalColumnsMigration } from "./024-protect-terminal-columns.js"
 
 const migrations: Record<string, Migration> = {
   "001-foundation": foundationMigration,
@@ -47,6 +48,7 @@ const migrations: Record<string, Migration> = {
   "021-screen-access": screenAccessMigration,
   "022-settings-screen-access": settingsScreenAccessMigration,
   "023-settings-always-visible": settingsAlwaysVisibleMigration,
+  "024-protect-terminal-columns": protectTerminalColumnsMigration,
 }
 
 export const migrationProvider: MigrationProvider = {

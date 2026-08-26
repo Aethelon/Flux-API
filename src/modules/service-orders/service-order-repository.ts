@@ -107,7 +107,7 @@ async function ensureDefaultColumns(
     semantic_type: column.semanticType,
     color_token: column.colorToken,
     display_position: column.position,
-    protected: column.semanticType === "completed",
+    protected: column.semanticType !== "open",
     created_by: user.id,
     updated_by: user.id,
     archived_at: null,
@@ -316,7 +316,7 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
         throw new AppError(409, "STALE_VERSION", "Column changed. Reload and retry.")
       }
       if (column.protected) {
-        throw new AppError(409, "PROTECTED_COLUMN", "The completed column cannot be archived.")
+        throw new AppError(409, "PROTECTED_COLUMN", "System columns cannot be archived.")
       }
       const used = await transaction.selectFrom("service_orders")
         .select("id").where("tenant_id", "=", user.tenantId)

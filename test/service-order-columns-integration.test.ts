@@ -12,7 +12,9 @@ const integrationDatabaseUrl = process.env.DATABASE_URL ?? testConfig.databaseUr
 interface Column {
   id: string
   label: string
+  semanticType: "open" | "completed" | "cancelled"
   displayPosition: number
+  protected: boolean
   version: number
 }
 
@@ -97,5 +99,37 @@ void describe("Service-order column ordering", { skip: !runIntegration }, () => 
       response.json<Column[]>().map((column) => column.displayPosition),
       reordered.map((_column, index) => index),
     )
+  })
+
+  void it("protects completed and cancelled system columns from removal", async () => {
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v1/service-order-columns",
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    assert.equal(list.statusCode, 200)
+    const columns = list.json<Column[]>()
+    const completed = columns.find((column) => column.semanticType === "completed")
+    const cancelled = columns.find((column) => column.semanticType === "cancelled")
+    assert.ok(completed)
+    assert.ok(cancelled)
+    assert.equal(completed.protected, true)
+    assert.equal(cancelled.protected, true)
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/service-order-columns/${cancelled.id}/archive`,
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: {
+        version: cancelled.version,
+        reason: "System column removal must be rejected.",
+      },
+    })
+
+    assert.equal(response.statusCode, 409, response.body)
+    assert.equal(response.json<{ code: string }>().code, "PROTECTED_COLUMN")
   })
 })
