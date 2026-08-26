@@ -183,7 +183,7 @@ SEED_ADMIN_EMAIL=
 SEED_ADMIN_PASSWORD=
 ```
 
-The password must contain between 12 and 128 characters. Then run:
+The password must contain between 8 and 128 characters. Then run:
 
 ```bash
 npm run db:seed:admin
@@ -198,7 +198,7 @@ inventory history, customers, cash sessions, sales, service orders, forecasts, a
 recommendations without deleting existing data:
 
 ```bash
-SEED_DEMO_PASSWORD="<at-least-12-characters>" npm run db:seed:demo
+SEED_DEMO_PASSWORD="<at-least-8-characters>" npm run db:seed:demo
 ```
 
 The seed is idempotent, refuses to run with `NODE_ENV=production`, and refreshes only

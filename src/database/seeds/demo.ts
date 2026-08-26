@@ -38,8 +38,8 @@ interface SalePlan {
 function requiredPassword(): string {
   const value = process.env.SEED_DEMO_PASSWORD?.trim()
   if (!value) throw new Error("SEED_DEMO_PASSWORD is required")
-  if (value.length < 12 || value.length > 128) {
-    throw new Error("SEED_DEMO_PASSWORD must contain between 12 and 128 characters")
+  if (value.length < 8 || value.length > 128) {
+    throw new Error("SEED_DEMO_PASSWORD must contain between 8 and 128 characters")
   }
   return value
 }

@@ -14,8 +14,8 @@ const adminName = required("SEED_ADMIN_NAME")
 const adminEmail = required("SEED_ADMIN_EMAIL").toLowerCase()
 const adminPassword = required("SEED_ADMIN_PASSWORD")
 
-if (adminPassword.length < 12 || adminPassword.length > 128) {
-  throw new Error("SEED_ADMIN_PASSWORD must contain between 12 and 128 characters")
+if (adminPassword.length < 8 || adminPassword.length > 128) {
+  throw new Error("SEED_ADMIN_PASSWORD must contain between 8 and 128 characters")
 }
 
 const database = createDatabase(loadConfig())
