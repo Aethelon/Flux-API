@@ -29,6 +29,7 @@ export function startBackgroundJobs(
   let analyticsRunning = false
   let aiRunning = false
   let housekeepingRunning = false
+  let workerQueueRunning = false
 
   async function runSnapshotClosure(): Promise<void> {
     if (snapshotRunning || stopping) return
@@ -49,7 +50,7 @@ export function startBackgroundJobs(
     if (exportRunning || stopping) return
     exportRunning = true
     try {
-      const processed = await processPendingExports(database)
+      const processed = await processPendingExports(database, 1)
       if (processed > 0) {
         logger.info({ processed }, "Processed export jobs")
       }
@@ -65,7 +66,7 @@ export function startBackgroundJobs(
     if (analyticsRunning || stopping) return
     analyticsRunning = true
     try {
-      const processed = await processPendingAnalytics(database)
+      const processed = await processPendingAnalytics(database, 1)
       if (processed > 0) {
         logger.info({ processed }, "Processed analytics jobs")
       }
@@ -80,7 +81,7 @@ export function startBackgroundJobs(
     if (aiRunning || stopping) return
     aiRunning = true
     try {
-      const processed = await processPendingAi(database, config, 2, aiProvider)
+      const processed = await processPendingAi(database, config, 1, aiProvider)
       if (processed > 0) {
         logger.info({ processed }, "Processed AI jobs")
       }
@@ -109,6 +110,18 @@ export function startBackgroundJobs(
     }
   }
 
+  async function runWorkerQueue(): Promise<void> {
+    if (workerQueueRunning || stopping) return
+    workerQueueRunning = true
+    try {
+      await runExports()
+      await runAnalytics()
+      await runAi()
+    } finally {
+      workerQueueRunning = false
+    }
+  }
+
   function schedule(operation: () => Promise<void>): void {
     const run = operation()
     activeRuns.add(run)
@@ -120,16 +133,12 @@ export function startBackgroundJobs(
 
   const timers = [
     setInterval(() => schedule(runSnapshotClosure), 60_000),
-    setInterval(() => schedule(runExports), 5_000),
-    setInterval(() => schedule(runAnalytics), 5_000),
-    setInterval(() => schedule(runAi), 5_000),
+    setInterval(() => schedule(runWorkerQueue), 5_000),
     setInterval(() => schedule(runMaintenance), 60 * 60 * 1_000),
   ]
 
   schedule(runSnapshotClosure)
-  schedule(runExports)
-  schedule(runAnalytics)
-  schedule(runAi)
+  schedule(runWorkerQueue)
   schedule(runMaintenance)
   logger.info("Embedded background jobs started")
 

@@ -70,6 +70,14 @@ export const DashboardSchema = Type.Object({
     activeProductCount: Type.Integer({ minimum: 0 }),
     soldOutCount: Type.Integer({ minimum: 0 }),
     lowStockCount: Type.Integer({ minimum: 0 }),
+    alerts: Type.Array(Type.Object({
+      productId: Type.String({ format: "uuid" }),
+      name: Type.String(),
+      status: Type.Union([
+        Type.Literal("sold_out"),
+        Type.Literal("low_stock"),
+      ]),
+    }), { maxItems: 3 }),
     inventoryValueCents: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     unitTurnover: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
     coverageDays: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),

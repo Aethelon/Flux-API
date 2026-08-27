@@ -173,7 +173,7 @@ export const UpdateProductBodySchema = Type.Object(
 
 export const ProductListQuerySchema = Type.Object({
   page: Type.Optional(Type.String({ pattern: "^[1-9][0-9]{0,8}$" })),
-  pageSize: Type.Optional(Type.String({ pattern: "^(?:[1-9]|[1-9][0-9]|100)$" })),
+  pageSize: Type.Optional(Type.String({ pattern: "^(?:[1-9]|[1-9][0-9]|[1-4][0-9]{2}|500)$" })),
   search: Type.Optional(Type.String({ maxLength: 160 })),
   categoryId: Type.Optional(Type.String({ format: "uuid" })),
   type: Type.Optional(ProductTypeSchema),

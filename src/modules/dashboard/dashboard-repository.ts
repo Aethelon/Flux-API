@@ -43,6 +43,12 @@ interface InventoryRow {
   cost_complete_count: string
 }
 
+interface InventoryAlertRow {
+  product_id: string
+  name: string
+  status: "sold_out" | "low_stock"
+}
+
 interface InventoryAnalyticsRow {
   unit_turnover: string | null
   coverage_days: string | null
@@ -125,6 +131,7 @@ export class KyselyDashboardRepository implements DashboardRepository {
       topProductsResult,
       inventorySeriesResult,
       inventoryResult,
+      inventoryAlertsResult,
       inventoryAnalyticsResult,
       customerResult,
       serviceOrdersResult,
@@ -385,6 +392,28 @@ export class KyselyDashboardRepository implements DashboardRepository {
           AND product.archived_at IS NULL
           AND product.type <> 'service'
       `.execute(this.database),
+      sql<InventoryAlertRow>`
+        SELECT
+          product.id AS product_id,
+          product.name,
+          CASE
+            WHEN balance.on_hand <= 0 THEN 'sold_out'
+            ELSE 'low_stock'
+          END AS status
+        FROM inventory_balances AS balance
+        INNER JOIN products AS product
+          ON product.id = balance.product_id
+          AND product.tenant_id = balance.tenant_id
+        WHERE product.tenant_id = ${tenantId}::uuid
+          AND product.active
+          AND product.archived_at IS NULL
+          AND product.type <> 'service'
+          AND balance.on_hand <= product.minimum_stock
+        ORDER BY
+          CASE WHEN balance.on_hand <= 0 THEN 0 ELSE 1 END,
+          product.name
+        LIMIT 3
+      `.execute(this.database),
       sql<InventoryAnalyticsRow>`
         WITH daily AS (
           SELECT
@@ -576,6 +605,11 @@ export class KyselyDashboardRepository implements DashboardRepository {
         activeProductCount: Number(inventory.active_product_count),
         soldOutCount: Number(inventory.sold_out_count),
         lowStockCount: Number(inventory.low_stock_count),
+        alerts: inventoryAlertsResult.rows.map((row) => ({
+          productId: row.product_id,
+          name: row.name,
+          status: row.status,
+        })),
         inventoryValueCents: inventoryCostsComplete
           ? Math.round(Number(inventory.inventory_value_cents))
           : null,

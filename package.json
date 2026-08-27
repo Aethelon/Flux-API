@@ -18,6 +18,7 @@
     "db:seed:admin": "tsx src/database/seeds/admin.ts",
     "db:seed:demo": "tsx src/database/seeds/demo.ts",
     "db:seed:demo-history": "tsx src/database/seeds/demo-history.ts",
+    "db:import:legacy-pdv": "tsx src/database/seeds/legacy-pdv.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {

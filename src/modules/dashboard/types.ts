@@ -54,6 +54,11 @@ export interface Dashboard {
     activeProductCount: number
     soldOutCount: number
     lowStockCount: number
+    alerts: Array<{
+      productId: string
+      name: string
+      status: "sold_out" | "low_stock"
+    }>
     inventoryValueCents: number | null
     unitTurnover: number | null
     coverageDays: number | null
