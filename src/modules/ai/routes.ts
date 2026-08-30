@@ -1,5 +1,4 @@
 import type { FastifyPluginCallbackTypebox } from "@fastify/type-provider-typebox"
-import { Type } from "@sinclair/typebox"
 import { ErrorResponseSchema } from "../../shared/http/schemas.js"
 import type { AuthenticatedUser } from "../auth/types.js"
 import type { AiReportPeriod } from "./types.js"
@@ -96,7 +95,7 @@ export const aiRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
       tags: ["Intelligence"],
       security: [{ bearerAuth: [] }],
       headers: IdempotencyHeadersSchema,
-      body: Type.Optional(CreateAiInsightRunBodySchema),
+      body: CreateAiInsightRunBodySchema,
       response: {
         202: AiJobSchema,
         401: ErrorResponseSchema,

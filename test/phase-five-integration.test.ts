@@ -481,7 +481,7 @@ void describe("Phase 5 PostgreSQL hardening integration", { skip: !runIntegratio
       "POST",
       "/api/v1/intelligence/insights/runs",
       adminToken,
-      undefined,
+      { period: "monthly" },
       randomUUID(),
       correlationId,
     )

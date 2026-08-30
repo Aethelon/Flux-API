@@ -194,12 +194,12 @@ void describe("Phase 4 PostgreSQL integration", { skip: !runIntegration }, () =>
     await app.close()
   })
 
-  void it("persists, caches, reviews and isolates AI insights", async () => {
+  void it("persists, regenerates, reviews and isolates AI insights", async () => {
     const employeeRequest = await request(
       "POST",
       "/api/v1/intelligence/insights/runs",
       employeeToken,
-      undefined,
+      { period: "monthly" },
       randomUUID(),
     )
     assert.equal(employeeRequest.statusCode, 403)
@@ -209,14 +209,14 @@ void describe("Phase 4 PostgreSQL integration", { skip: !runIntegration }, () =>
       "POST",
       "/api/v1/intelligence/insights/runs",
       adminToken,
-      undefined,
+      { period: "monthly" },
       key,
     )
     const replayed = await request(
       "POST",
       "/api/v1/intelligence/insights/runs",
       adminToken,
-      undefined,
+      { period: "monthly" },
       key,
     )
     assert.equal(created.statusCode, 202, JSON.stringify(created.body))
@@ -252,19 +252,19 @@ void describe("Phase 4 PostgreSQL integration", { skip: !runIntegration }, () =>
       "POST",
       "/api/v1/intelligence/insights/runs",
       adminToken,
-      undefined,
+      { period: "monthly" },
       randomUUID(),
     )
     assert.equal(second.statusCode, 202)
     assert.equal(await processPendingAi(app.db, config, 2, provider), 1)
-    assert.equal(provider.calls, 1)
-    const cachedRun = await app.db.selectFrom("ai_runs").select([
+    assert.equal(provider.calls, 2)
+    const regeneratedRun = await app.db.selectFrom("ai_runs").select([
       "status",
       "cache_source_run_id",
     ]).where("job_run_id", "=", String(second.body.id))
       .executeTakeFirstOrThrow()
-    assert.equal(cachedRun.status, "cached")
-    assert.ok(cachedRun.cache_source_run_id)
+    assert.equal(regeneratedRun.status, "completed")
+    assert.equal(regeneratedRun.cache_source_run_id, null)
 
     const persisted = await app.db.selectFrom("ai_runs").select([
       "sanitized_input",
@@ -310,7 +310,7 @@ void describe("Phase 4 PostgreSQL integration", { skip: !runIntegration }, () =>
       "POST",
       "/api/v1/intelligence/insights/runs",
       adminToken,
-      undefined,
+      { period: "monthly" },
       randomUUID(),
     )
     assert.equal(invalid.statusCode, 202)

@@ -199,7 +199,9 @@ export async function publishAiReportSnapshot(
     calculation_version: "ai-report-period-v1",
     source_from: bounds.from_at,
     source_to: bounds.to_at,
-    source_ids: dashboard.topProducts.data.map((product) => product.productId),
+    source_ids: sql`${JSON.stringify(
+      dashboard.topProducts.data.map((product) => product.productId),
+    )}::jsonb`,
     configuration: { reportPeriod },
     inputs: {},
     result: {

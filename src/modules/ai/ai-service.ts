@@ -156,6 +156,28 @@ export class AiService {
     if (!settings.ai_enabled) {
       throw new AppError(503, "AI_DISABLED", "AI insights are not enabled.")
     }
+    const route = "POST /api/v1/intelligence/insights/runs"
+    const requestHash = hash({ reportPeriod })
+    const replayId = await this.database.transaction().execute(
+      (transaction) => replayedEntityId(
+        transaction,
+        user,
+        route,
+        idempotencyKey,
+        requestHash,
+      ),
+    )
+    if (replayId) {
+      const replayed = await this.repository.getJob(user.tenantId, replayId)
+      if (!replayed) {
+        throw new AppError(
+          409,
+          "IDEMPOTENCY_RESULT_UNAVAILABLE",
+          "The previous request result is not available for replay.",
+        )
+      }
+      return replayed
+    }
     await publishAiReportSnapshot(
       this.database,
       user.tenantId,
@@ -185,9 +207,9 @@ export class AiService {
       providerName,
       modelId,
       this.config,
-      "POST /api/v1/intelligence/insights/runs",
+      route,
       idempotencyKey,
-      digest,
+      requestHash,
     )
   }
 

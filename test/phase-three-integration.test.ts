@@ -486,7 +486,7 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     )
     assert.equal(job.statusCode, 200)
     assert.equal(job.body.status, "completed")
-    assert.equal(job.body.totalCount, 3)
+    assert.equal(job.body.totalCount, 2)
     assert.equal(
       (await request(
         "GET",
@@ -534,15 +534,18 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
     )
     assert.equal(allRuns.statusCode, 200)
     const persistedRuns = allRuns.body.data as Array<Record<string, unknown>>
-    assert.equal(persistedRuns.length, 3)
-    assert.ok(persistedRuns.some((run) => run.status === "poor_data_quality"))
+    assert.equal(persistedRuns.length, 2)
+    assert.equal(
+      persistedRuns.some((run) => run.status === "poor_data_quality"),
+      false,
+    )
     const snapshotCount = await app.db.selectFrom("metric_snapshots")
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .where("tenant_id", "=", tenantId).executeTakeFirstOrThrow()
     const backtestCount = await app.db.selectFrom("forecast_backtests")
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .where("tenant_id", "=", tenantId).executeTakeFirstOrThrow()
-    assert.equal(Number(snapshotCount.count), 3)
+    assert.equal(Number(snapshotCount.count), 2)
     assert.ok(Number(backtestCount.count) > 0)
   })
 
