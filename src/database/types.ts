@@ -560,6 +560,7 @@ export interface ServiceOrderColumnTable {
   color_token: string
   display_position: number
   protected: boolean
+  ready_for_sale: boolean
   version: Generated<number>
   created_by: string
   updated_by: string
@@ -687,6 +688,7 @@ export type ForecastTargetType = "product_demand" | "monthly_revenue"
 export type ForecastMethod =
   | "ols_trend"
   | "seasonal_ols"
+  | "damped_trend"
   | "naive_last_value"
   | "unavailable"
 export type ForecastStatus =

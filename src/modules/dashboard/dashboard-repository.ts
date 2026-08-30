@@ -256,7 +256,8 @@ export class KyselyDashboardRepository implements DashboardRepository {
       sql<TopProductRow>`
         WITH sold AS (
           SELECT
-            item.product_id,
+            COALESCE(item.product_id, item.service_order_id) AS product_id,
+            item.product_type_snapshot AS type,
             (
               ARRAY_AGG(
                 item.product_name_snapshot
@@ -273,12 +274,13 @@ export class KyselyDashboardRepository implements DashboardRepository {
             AND sale.completed_at >= ${from}
             AND sale.completed_at < ${to}
             AND sale.status <> 'cancelled'
-            AND item.product_id IS NOT NULL
-          GROUP BY item.product_id
+            AND COALESCE(item.product_id, item.service_order_id) IS NOT NULL
+          GROUP BY COALESCE(item.product_id, item.service_order_id), item.product_type_snapshot
         ),
         returned AS (
           SELECT
-            original_item.product_id,
+            COALESCE(original_item.product_id, original_item.service_order_id) AS product_id,
+            original_item.product_type_snapshot AS type,
             (
               ARRAY_AGG(
                 original_item.product_name_snapshot
@@ -301,24 +303,40 @@ export class KyselyDashboardRepository implements DashboardRepository {
             AND sale_return.completed_at >= ${from}
             AND sale_return.completed_at < ${to}
             AND original_sale.status <> 'cancelled'
-            AND original_item.product_id IS NOT NULL
-          GROUP BY original_item.product_id
+            AND COALESCE(original_item.product_id, original_item.service_order_id) IS NOT NULL
+          GROUP BY
+            COALESCE(original_item.product_id, original_item.service_order_id),
+            original_item.product_type_snapshot
+        ),
+        combined AS (
+          SELECT
+            COALESCE(sold.product_id, returned.product_id) AS product_id,
+            COALESCE(sold.name, returned.name) AS name,
+            product.barcode,
+            COALESCE(sold.type, returned.type) AS type,
+            COALESCE(sold.units, 0) - COALESCE(returned.units, 0) AS units_sold,
+            COALESCE(sold.revenue_cents, 0)
+              - COALESCE(returned.revenue_cents, 0) AS net_revenue_cents
+          FROM sold
+          FULL OUTER JOIN returned USING (product_id, type)
+          LEFT JOIN products AS product
+            ON product.id = COALESCE(sold.product_id, returned.product_id)
+            AND COALESCE(sold.type, returned.type) <> 'service'
+            AND product.tenant_id = ${tenantId}::uuid
+        ),
+        ranked AS (
+          SELECT
+            combined.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY type
+              ORDER BY ${rankOrder}, name, product_id
+            ) AS position
+          FROM combined
         )
-        SELECT
-          COALESCE(sold.product_id, returned.product_id) AS product_id,
-          COALESCE(sold.name, returned.name) AS name,
-          product.barcode,
-          product.type,
-          COALESCE(sold.units, 0) - COALESCE(returned.units, 0) AS units_sold,
-          COALESCE(sold.revenue_cents, 0)
-            - COALESCE(returned.revenue_cents, 0) AS net_revenue_cents
-        FROM sold
-        FULL OUTER JOIN returned USING (product_id)
-        INNER JOIN products AS product
-          ON product.id = COALESCE(sold.product_id, returned.product_id)
-          AND product.tenant_id = ${tenantId}::uuid
-        ORDER BY ${rankOrder}, name, product_id
-        LIMIT ${input.topLimit}
+        SELECT product_id, name, barcode, type, units_sold, net_revenue_cents
+        FROM ranked
+        WHERE position <= ${input.topLimit}
+        ORDER BY type, position
       `.execute(this.database),
       sql<InventorySeriesRow>`
         WITH ranked_snapshots AS (
@@ -450,6 +468,26 @@ export class KyselyDashboardRepository implements DashboardRepository {
             AND product.active
             AND product.archived_at IS NULL
             AND product.type <> 'service'
+        ),
+        period_sales AS (
+          SELECT COALESCE(
+            SUM(item.quantity - item.returned_quantity),
+            0
+          ) AS units_sold
+          FROM sale_items AS item
+          INNER JOIN sales AS sale
+            ON sale.id = item.sale_id
+            AND sale.tenant_id = item.tenant_id
+          INNER JOIN products AS product
+            ON product.id = item.product_id
+            AND product.tenant_id = item.tenant_id
+          WHERE item.tenant_id = ${tenantId}::uuid
+            AND sale.completed_at >= ${from}
+            AND sale.completed_at < ${to}
+            AND sale.status <> 'cancelled'
+            AND product.active
+            AND product.archived_at IS NULL
+            AND product.type <> 'service'
         )
         SELECT
           (
@@ -457,15 +495,25 @@ export class KyselyDashboardRepository implements DashboardRepository {
           )::text AS unit_turnover,
           (
             current_inventory.on_hand
-            / NULLIF(SUM(daily.sold) / NULLIF(COUNT(*), 0), 0)
+            / NULLIF(
+              period_sales.units_sold
+              / GREATEST(
+                EXTRACT(EPOCH FROM (
+                  ${to}::timestamptz - ${from}::timestamptz
+                )) / 86400,
+                1
+              ),
+              0
+            )
           )::text AS coverage_days,
           (
             SUM(daily.stockout_minutes)
             / NULLIF(SUM(daily.observed_minutes), 0)
           )::text AS stockout_rate
         FROM current_inventory
+        CROSS JOIN period_sales
         LEFT JOIN daily ON TRUE
-        GROUP BY current_inventory.on_hand
+        GROUP BY current_inventory.on_hand, period_sales.units_sold
       `.execute(this.database),
       sql<CustomerRow>`
         WITH customer_sales AS (

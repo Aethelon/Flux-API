@@ -19,6 +19,7 @@ export const ColumnSchema = Type.Object({
   colorToken: Type.String(),
   displayPosition: Type.Integer({ minimum: 0 }),
   protected: Type.Boolean(),
+  readyForSale: Type.Boolean(),
   version: Type.Integer({ minimum: 1 }),
 })
 

@@ -1,14 +1,19 @@
 import type { FastifyPluginCallbackTypebox } from "@fastify/type-provider-typebox"
+import { Type } from "@sinclair/typebox"
 import { ErrorResponseSchema } from "../../shared/http/schemas.js"
 import type { AuthenticatedUser } from "../auth/types.js"
+import type { AiReportPeriod } from "./types.js"
 import {
   AiInsightPageSchema,
   AiInsightQuerySchema,
   AiInsightSchema,
   AiJobSchema,
+  AiSettingsSchema,
+  CreateAiInsightRunBodySchema,
   IdempotencyHeadersSchema,
   IdParamsSchema,
   ReviewAiInsightBodySchema,
+  UpdateAiSettingsBodySchema,
 } from "./schemas.js"
 
 function user(auth: AuthenticatedUser | null): AuthenticatedUser {
@@ -16,7 +21,51 @@ function user(auth: AuthenticatedUser | null): AuthenticatedUser {
   return auth
 }
 
+function reportPeriod(body: unknown): AiReportPeriod {
+  return typeof body === "object"
+    && body !== null
+    && "period" in body
+    && body.period === "quarterly"
+    ? "quarterly"
+    : "monthly"
+}
+
 export const aiRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
+  const admin = app.authorize(["admin"])
+  app.get("/intelligence/settings", {
+    preHandler: admin,
+    schema: {
+      tags: ["Intelligence"],
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: AiSettingsSchema,
+        401: ErrorResponseSchema,
+        403: ErrorResponseSchema,
+      },
+    },
+  }, async (request) => app.aiService.getSettings(user(request.auth).tenantId))
+
+  app.patch("/intelligence/settings", {
+    preHandler: admin,
+    schema: {
+      tags: ["Intelligence"],
+      security: [{ bearerAuth: [] }],
+      headers: IdempotencyHeadersSchema,
+      body: UpdateAiSettingsBodySchema,
+      response: {
+        200: AiSettingsSchema,
+        400: ErrorResponseSchema,
+        401: ErrorResponseSchema,
+        403: ErrorResponseSchema,
+        409: ErrorResponseSchema,
+      },
+    },
+  }, async (request) => app.aiService.updateSettings(
+    user(request.auth),
+    request.body,
+    request.headers["idempotency-key"],
+  ))
+
   app.get("/intelligence/insights", {
     preHandler: app.authorizePermission("intelligence.view"),
     schema: {
@@ -47,6 +96,7 @@ export const aiRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
       tags: ["Intelligence"],
       security: [{ bearerAuth: [] }],
       headers: IdempotencyHeadersSchema,
+      body: Type.Optional(CreateAiInsightRunBodySchema),
       response: {
         202: AiJobSchema,
         401: ErrorResponseSchema,
@@ -59,6 +109,7 @@ export const aiRoutes: FastifyPluginCallbackTypebox = (app, _options, done) => {
     await app.aiService.createRun(
       user(request.auth),
       request.headers["idempotency-key"],
+      reportPeriod(request.body),
     ),
   ))
 

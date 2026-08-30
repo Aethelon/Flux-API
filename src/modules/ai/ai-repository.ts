@@ -15,6 +15,7 @@ import { currentCorrelationId } from "../../shared/observability/request-context
 import type {
   AiInsight,
   AiJob,
+  AiReportPeriod,
   SanitizedAiInput,
 } from "./types.js"
 
@@ -60,6 +61,42 @@ function stringArray(value: unknown): string[] {
     : []
 }
 
+function reportPeriod(value: unknown): AiReportPeriod {
+  if (value === "quarterly") return "quarterly"
+  if (value === "monthly") return "monthly"
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "monthly"
+  }
+  const context = (value as Record<string, unknown>).context
+  if (typeof context !== "object" || context === null || Array.isArray(context)) {
+    return "monthly"
+  }
+  return (context as Record<string, unknown>).reportPeriod === "quarterly"
+    ? "quarterly"
+    : "monthly"
+}
+
+function combinedLatestStatus(
+  runs: Array<{ status: AiRunStatus; report_period: string | null }>,
+): AiRunStatus | null {
+  const latestByPeriod = new Map<AiReportPeriod, AiRunStatus>()
+  for (const run of runs) {
+    const period = reportPeriod(run.report_period)
+    if (!latestByPeriod.has(period)) latestByPeriod.set(period, run.status)
+  }
+  const statuses = [...latestByPeriod.values()]
+  if (statuses.length === 0) return null
+  if (statuses.some((status) => status === "processing")) return "processing"
+  if (statuses.some((status) => status === "pending")) return "pending"
+  if (statuses.some((status) => status === "failed")) return "failed"
+  if (statuses.some((status) => status === "budget_exceeded")) {
+    return "budget_exceeded"
+  }
+  if (statuses.some((status) => status === "rejected")) return "rejected"
+  if (statuses.every((status) => status === "cached")) return "cached"
+  return "completed"
+}
+
 function job(row: {
   id: string
   status: AiJob["status"]
@@ -89,6 +126,7 @@ function insight(row: {
   id: string
   ai_run_id: string
   status: AiRunStatus
+  report_period: string | null
   provider: AiProviderName
   model_id: string
   prompt_version: string
@@ -110,6 +148,7 @@ function insight(row: {
     id: row.id,
     runId: row.ai_run_id,
     runStatus: row.status,
+    reportPeriod: reportPeriod(row.report_period),
     provider: row.provider,
     modelId: row.model_id,
     promptVersion: row.prompt_version,
@@ -159,7 +198,10 @@ export class KyselyAiRepository implements AiRepository {
         job_type: "ai",
         status: "pending",
         requested_by: user.id,
-        parameters: { runType: "insights" },
+        parameters: {
+          runType: "insights",
+          reportPeriod: input.context.reportPeriod ?? "monthly",
+        },
         cursor: null,
         total_count: null,
         error_class: null,
@@ -205,6 +247,7 @@ export class KyselyAiRepository implements AiRepository {
           modelId,
           inputHash,
           sourceSnapshotIds,
+          reportPeriod: input.context.reportPeriod ?? "monthly",
         },
       })
       await saveEntityIdempotency(
@@ -259,6 +302,7 @@ export class KyselyAiRepository implements AiRepository {
         "insight.id",
         "insight.ai_run_id",
         "run.status",
+        sql<string | null>`run.sanitized_input #>> '{context,reportPeriod}'`.as("report_period"),
         "run.provider",
         "run.model_id",
         "run.prompt_version",
@@ -283,18 +327,21 @@ export class KyselyAiRepository implements AiRepository {
         < (${new Date(input.cursor.createdAt)}, ${input.cursor.id}::uuid)
       `)
     }
-    const [rows, latest] = await Promise.all([
+    const [rows, latestRuns] = await Promise.all([
       query.orderBy("insight.created_at", "desc").orderBy("insight.id", "desc")
         .limit(input.limit + 1).execute(),
-      this.database.selectFrom("ai_runs").select("status")
+      this.database.selectFrom("ai_runs").select([
+        "status",
+        sql<string | null>`sanitized_input #>> '{context,reportPeriod}'`.as("report_period"),
+      ])
         .where("tenant_id", "=", tenantId)
         .orderBy("created_at", "desc").orderBy("id", "desc")
-        .executeTakeFirst(),
+        .limit(20).execute(),
     ])
     return {
       data: rows.slice(0, input.limit).map(insight),
       hasMore: rows.length > input.limit,
-      latestRunStatus: latest?.status ?? null,
+      latestRunStatus: combinedLatestStatus(latestRuns),
     }
   }
 
@@ -358,6 +405,7 @@ export class KyselyAiRepository implements AiRepository {
         "insight.id",
         "insight.ai_run_id",
         "run.status",
+        sql<string | null>`run.sanitized_input #>> '{context,reportPeriod}'`.as("report_period"),
         "run.provider",
         "run.model_id",
         "run.prompt_version",

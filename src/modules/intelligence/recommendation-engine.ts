@@ -48,6 +48,16 @@ interface ProposedRecommendation {
   snapshotId: string
 }
 
+interface StockoutReviewRow {
+  product_id: string
+  product_name: string
+  on_hand: string
+  reserved: string
+  units_sold: string
+  sale_count: string
+  last_sold_at: Date
+}
+
 function jsonRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null
     ? value as Record<string, unknown>
@@ -171,13 +181,126 @@ async function latestForecast(
   }
 }
 
+async function stockoutReviewCandidates(
+  database: Kysely<Database>,
+  tenantId: string,
+  windowDays: number,
+): Promise<ProposedRecommendation[]> {
+  const result = await sql<StockoutReviewRow>`
+    SELECT
+      product.id AS product_id,
+      product.name AS product_name,
+      balance.on_hand::text,
+      balance.reserved::text,
+      SUM(item.quantity - item.returned_quantity)::text AS units_sold,
+      COUNT(DISTINCT sale.id)::text AS sale_count,
+      MAX(sale.completed_at) AS last_sold_at
+    FROM products AS product
+    INNER JOIN inventory_balances AS balance
+      ON balance.product_id = product.id
+      AND balance.tenant_id = product.tenant_id
+    INNER JOIN sale_items AS item
+      ON item.product_id = product.id
+      AND item.tenant_id = product.tenant_id
+    INNER JOIN sales AS sale
+      ON sale.id = item.sale_id
+      AND sale.tenant_id = item.tenant_id
+    WHERE product.tenant_id = ${tenantId}::uuid
+      AND product.active = true
+      AND product.archived_at IS NULL
+      AND product.type <> 'service'
+      AND (balance.on_hand - balance.reserved) <= 0
+      AND sale.status <> 'cancelled'
+      AND sale.completed_at >= now() - (${windowDays}::integer * interval '1 day')
+    GROUP BY product.id, product.name, balance.on_hand, balance.reserved
+    HAVING SUM(item.quantity - item.returned_quantity) > 0
+    ORDER BY
+      SUM(item.quantity - item.returned_quantity) DESC,
+      MAX(sale.completed_at) DESC,
+      product.id
+    LIMIT 20
+  `.execute(database)
+  const sourceTo = new Date()
+  const sourceFrom = new Date(sourceTo.getTime() - (windowDays * 24 * 60 * 60 * 1_000))
+  const candidates: ProposedRecommendation[] = []
+  for (const row of result.rows) {
+    const onHand = Number(row.on_hand)
+    const reserved = Number(row.reserved)
+    const evidence = {
+      dataWindow: {
+        from: sourceFrom.toISOString(),
+        to: sourceTo.toISOString(),
+      },
+      currentStock: {
+        onHand,
+        reserved,
+        available: onHand - reserved,
+      },
+      recentSales: {
+        windowDays,
+        unitsSold: Number(row.units_sold),
+        saleCount: Number(row.sale_count),
+        lastSoldAt: row.last_sold_at.toISOString(),
+      },
+      limitations: [
+        "historical_daily_inventory_snapshots_unavailable",
+        "replenishment_quantity_requires_manual_review",
+      ],
+    }
+    const snapshot = await database.insertInto("metric_snapshots").values({
+      tenant_id: tenantId,
+      metric_key: "inventory_recommendation_evidence",
+      entity_type: "product",
+      entity_id: row.product_id,
+      calculation_version: ANALYTICS_CALCULATION_VERSION,
+      source_from: sourceFrom,
+      source_to: sourceTo,
+      source_ids: {},
+      configuration: { windowDays, fallback: "current_stock_and_recent_sales" },
+      inputs: {},
+      result: evidence,
+      completeness: {
+        complete: false,
+        reason: "historical_daily_inventory_snapshots_unavailable",
+      },
+      published: true,
+    }).returning("id").executeTakeFirstOrThrow()
+    candidates.push({
+      type: "replenishment",
+      productId: row.product_id,
+      evidence,
+      proposed: {
+        action: "manual_review",
+        reason: "replenishment_quantity_requires_daily_inventory_history",
+      },
+      confidenceScore: null,
+      confidenceLabel: "unavailable",
+      snapshotId: snapshot.id,
+    })
+  }
+  return candidates
+}
+
 export async function generateRecommendations(
   database: Kysely<Database>,
   input: { tenantId: string; actorId: string },
 ): Promise<{ runId: string; count: number }> {
   const settings = await analyticsSettings(database, input.tenantId)
   const candidates: ProposedRecommendation[] = []
-  for (const product of await products(database, input.tenantId)) {
+  const hasDailySnapshots = await database.selectFrom("inventory_daily_snapshots")
+    .select("product_id")
+    .where("tenant_id", "=", input.tenantId)
+    .executeTakeFirst()
+  if (!hasDailySnapshots) {
+    candidates.push(...await stockoutReviewCandidates(
+      database,
+      input.tenantId,
+      settings.demandWindowDays,
+    ))
+  }
+  for (const product of hasDailySnapshots
+    ? await products(database, input.tenantId)
+    : []) {
     const rows = await dailyObservations(
       database,
       input.tenantId,

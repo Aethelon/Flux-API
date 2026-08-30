@@ -1,5 +1,7 @@
 import type { AiProviderName, AiRunStatus } from "../../database/types.js"
 
+export type AiReportPeriod = "monthly" | "quarterly"
+
 export interface SanitizedMetric {
   id: string
   key: string
@@ -58,6 +60,7 @@ export interface SanitizedAiInput {
     businessType: "retail_and_production"
     timezone: string
     currency: string
+    reportPeriod?: AiReportPeriod
   }
   generatedAt: string
   metrics: SanitizedMetric[]
@@ -118,6 +121,7 @@ export interface AiInsight {
   id: string
   runId: string
   runStatus: AiRunStatus
+  reportPeriod: AiReportPeriod
   provider: AiProviderName
   modelId: string
   promptVersion: string
@@ -140,4 +144,10 @@ export interface AiInsightPage {
   nextCursor: string | null
   availability: "available" | "unavailable"
   latestRunStatus: AiRunStatus | null
+}
+
+export interface AiSettings {
+  enabled: boolean
+  provider: AiProviderName | "disabled"
+  providerConfigured: boolean
 }

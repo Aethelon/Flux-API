@@ -11,6 +11,7 @@ export const IdempotencyHeadersSchema = Type.Object({
 export const CreateForecastRunBodySchema = Type.Object({
   productId: Type.Optional(Type.String({ format: "uuid" })),
   includeRevenue: Type.Optional(Type.Boolean()),
+  includeProducts: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false })
 
 export const ForecastQuerySchema = Type.Object({
@@ -43,6 +44,18 @@ const ForecastPointSchema = Type.Object({
   upperLimit: Type.Union([Type.Number(), Type.Null()]),
   seasonalFactor: Type.Union([Type.Number(), Type.Null()]),
   operationalValue: Type.Number({ minimum: 0 }),
+  calendarEvents: Type.Array(Type.Object({
+    name: Type.String(),
+    kind: Type.Union([
+      Type.Literal("season"),
+      Type.Literal("retail"),
+      Type.Literal("holiday"),
+      Type.Literal("custom"),
+    ]),
+    source: Type.String(),
+    startsOn: Type.String({ format: "date" }),
+    endsOn: Type.String({ format: "date" }),
+  })),
 })
 
 const ForecastRunSchema = Type.Object({
@@ -61,6 +74,7 @@ const ForecastRunSchema = Type.Object({
   method: Type.Union([
     Type.Literal("ols_trend"),
     Type.Literal("seasonal_ols"),
+    Type.Literal("damped_trend"),
     Type.Literal("naive_last_value"),
     Type.Literal("unavailable"),
   ]),

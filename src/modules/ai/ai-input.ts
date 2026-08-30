@@ -1,6 +1,10 @@
 import type { Kysely } from "kysely"
+import { sql } from "kysely"
 import type { Database } from "../../database/types.js"
+import { KyselyDashboardRepository } from "../dashboard/dashboard-repository.js"
+import { KyselyHistoryRepository } from "../history/history-repository.js"
 import type {
+  AiReportPeriod,
   SanitizedAiInput,
   SanitizedForecast,
   SanitizedRecommendation,
@@ -48,6 +52,8 @@ function compactInventoryEvidence(value: unknown): unknown {
   const evidence = value as Record<string, unknown>
   const selected = [
     "dataWindow",
+    "currentStock",
+    "recentSales",
     "trendSlope",
     "limitations",
     "completeness",
@@ -92,6 +98,8 @@ function compactRecommendationEvidence(value: unknown): unknown {
   }
   const evidence = compacted as Record<string, unknown>
   return Object.fromEntries([
+    "currentStock",
+    "recentSales",
     "trendSlope",
     "unitTurnover",
     "costTurnover",
@@ -137,11 +145,100 @@ function latestMetricRows<T extends {
   }).slice(0, 50)
 }
 
+function configuredReportPeriod(value: unknown): AiReportPeriod | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null
+  }
+  const period = (value as Record<string, unknown>).reportPeriod
+  return period === "monthly" || period === "quarterly" ? period : null
+}
+
 function formatBrl(cents: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
   }).format(cents / 100)
+}
+
+export async function publishAiReportSnapshot(
+  database: Kysely<Database>,
+  tenantId: string,
+  reportPeriod: AiReportPeriod,
+): Promise<string> {
+  const boundsResult = await sql<{
+    from_at: Date
+    to_at: Date
+  }>`
+    SELECT
+      (
+        date_trunc('month', now() AT TIME ZONE settings.timezone)
+        - ${reportPeriod === "quarterly" ? 2 : 0} * interval '1 month'
+      ) AT TIME ZONE settings.timezone AS from_at,
+      now() AS to_at
+    FROM tenant_settings AS settings
+    WHERE settings.tenant_id = ${tenantId}::uuid
+  `.execute(database)
+  const bounds = boundsResult.rows[0]
+  if (!bounds) throw new Error("Tenant settings are unavailable")
+
+  const dashboard = await new KyselyDashboardRepository(
+    database,
+    new KyselyHistoryRepository(database),
+  ).get(tenantId, {
+    from: bounds.from_at,
+    to: bounds.to_at,
+    bucket: "month",
+    topBy: "net_revenue",
+    topLimit: 20,
+  })
+  const snapshot = await database.insertInto("metric_snapshots").values({
+    tenant_id: tenantId,
+    metric_key: "ai_report_period",
+    entity_type: "tenant",
+    entity_id: null,
+    calculation_version: "ai-report-period-v1",
+    source_from: bounds.from_at,
+    source_to: bounds.to_at,
+    source_ids: dashboard.topProducts.data.map((product) => product.productId),
+    configuration: { reportPeriod },
+    inputs: {},
+    result: {
+      reportPeriod,
+      dateRange: dashboard.dateRange,
+      partialPeriod: true,
+      sales: {
+        netRevenueCents: dashboard.sales.netRevenueCents,
+        netRevenueBrl: formatBrl(dashboard.sales.netRevenueCents),
+        completedSaleCount: dashboard.sales.completedSaleCount,
+        unitsSold: dashboard.sales.unitsSold,
+        averageTicketCents: dashboard.sales.averageTicketCents,
+        averageTicketBrl: dashboard.sales.averageTicketCents === null
+          ? null
+          : formatBrl(dashboard.sales.averageTicketCents),
+      },
+      revenueByMonth: dashboard.revenueSeries.map((point) => ({
+        month: point.bucketStart.slice(0, 7),
+        completedSaleCount: point.completedSaleCount,
+        netRevenueCents: point.netRevenueCents,
+        netRevenueBrl: formatBrl(point.netRevenueCents),
+      })),
+      topProducts: dashboard.topProducts.data.map((product) => ({
+        productId: product.productId,
+        name: product.name,
+        type: product.type,
+        unitsSold: product.unitsSold,
+        netRevenueCents: product.netRevenueCents,
+        netRevenueBrl: formatBrl(product.netRevenueCents),
+      })),
+      inventory: dashboard.inventory,
+      serviceOrders: dashboard.serviceOrders,
+      cash: dashboard.cash,
+      customers: dashboard.customers,
+    },
+    completeness: dashboard.completeness,
+    published: true,
+  }).returning("id").executeTakeFirstOrThrow()
+  return snapshot.id
 }
 
 export function metricResultForAi(
@@ -183,12 +280,13 @@ export function metricResultForAi(
 export async function buildSanitizedAiInput(
   database: Kysely<Database>,
   tenantId: string,
+  reportPeriod: AiReportPeriod = "monthly",
 ): Promise<SanitizedAiInput> {
   const settings = await database.selectFrom("tenant_settings").select([
     "timezone",
     "currency",
   ]).where("tenant_id", "=", tenantId).executeTakeFirstOrThrow()
-  const metricRows = latestMetricRows(await database.selectFrom("metric_snapshots as metric")
+  const availableMetricRows = await database.selectFrom("metric_snapshots as metric")
     .leftJoin("products as product", (join) => join
       .onRef("product.id", "=", "metric.entity_id")
       .onRef("product.tenant_id", "=", "metric.tenant_id"))
@@ -199,6 +297,7 @@ export async function buildSanitizedAiInput(
       "metric.entity_id",
       "product.name as entity_name",
       "metric.calculation_version",
+      "metric.configuration",
       "metric.source_from",
       "metric.source_to",
       "metric.result",
@@ -207,7 +306,11 @@ export async function buildSanitizedAiInput(
     ]).where("metric.tenant_id", "=", tenantId)
     .where("metric.published", "=", true)
     .orderBy("metric.generated_at", "desc").orderBy("metric.id", "desc")
-    .limit(100).execute())
+    .limit(100).execute()
+  const metricRows = latestMetricRows(availableMetricRows.filter((row) => (
+    row.metric_key !== "ai_report_period"
+      || configuredReportPeriod(row.configuration) === reportPeriod
+  )))
   const availableForecastRows = await database.selectFrom("forecast_runs as forecast")
     .leftJoin("products as product", (join) => join
       .onRef("product.id", "=", "forecast.product_id")
@@ -319,16 +422,23 @@ export async function buildSanitizedAiInput(
     ...forecastRows.map((row) => row.created_at.getTime()),
     ...recommendationRows.map((row) => row.created_at.getTime()),
   ]
+  const reportMetricRows = metricRows.filter(
+    (row) => row.metric_key === "ai_report_period",
+  )
+  const selectedMetricRows = reportMetricRows.length > 0
+    ? reportMetricRows
+    : metricRows
   return {
     context: {
       businessType: "retail_and_production",
       timezone: settings.timezone,
       currency: settings.currency,
+      reportPeriod,
     },
     generatedAt: new Date(
       latestDates.length > 0 ? Math.max(...latestDates) : 0,
     ).toISOString(),
-    metrics: metricRows.map((row) => ({
+    metrics: selectedMetricRows.map((row) => ({
       id: row.id,
       key: row.metric_key,
       entityType: row.entity_type,
@@ -343,8 +453,8 @@ export async function buildSanitizedAiInput(
         : metricResultForAi(row.metric_key, row.source_from, row.result),
       completeness: compactAiValue(row.completeness),
     })),
-    forecasts,
-    recommendations,
+    forecasts: reportMetricRows.length > 0 ? [] : forecasts,
+    recommendations: reportMetricRows.length > 0 ? [] : recommendations,
     limitations: metricRows.length === 0
       ? ["No published deterministic metric snapshots are available."]
       : [],

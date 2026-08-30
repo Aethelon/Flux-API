@@ -305,19 +305,29 @@ export class KyselySalesRepository implements SalesRepository {
         throw new AppError(409, "SALE_PRODUCT_UNAVAILABLE", "A sale product is unavailable.")
       }
       const serviceOrders = serviceOrderIds.length === 0 ? [] : await transaction
-        .selectFrom("service_orders").select([
-          "id", "customer_id", "customer_name_snapshot", "title",
-          "estimated_value_cents", "current_column_id", "current_status", "final_sale_id",
-        ]).where("tenant_id", "=", user.tenantId).where("id", "in", serviceOrderIds)
-        .orderBy("id").forUpdate().execute()
+        .selectFrom("service_orders as service_order")
+        .innerJoin("service_order_columns as current_column", (join) => join
+          .onRef("current_column.id", "=", "service_order.current_column_id")
+          .onRef("current_column.tenant_id", "=", "service_order.tenant_id"))
+        .select([
+          "service_order.id", "service_order.customer_id",
+          "service_order.customer_name_snapshot", "service_order.title",
+          "service_order.estimated_value_cents", "service_order.current_column_id",
+          "service_order.current_status", "service_order.final_sale_id",
+          "current_column.ready_for_sale",
+        ]).where("service_order.tenant_id", "=", user.tenantId)
+        .where("service_order.id", "in", serviceOrderIds)
+        .orderBy("service_order.id").forUpdate("service_order").execute()
       if (serviceOrders.length !== serviceOrderIds.length
         || serviceOrders.some((order) =>
-          order.current_status !== "open" || order.final_sale_id !== null
+          order.current_status !== "open"
+          || !order.ready_for_sale
+          || order.final_sale_id !== null
         )) {
         throw new AppError(
           409,
           "SERVICE_ORDER_UNAVAILABLE",
-          "A service order is unavailable or was already billed.",
+          "A service order must be ready for sale and not previously billed.",
         )
       }
       const orderCustomerIds = new Set(serviceOrders.map((order) => order.customer_id))

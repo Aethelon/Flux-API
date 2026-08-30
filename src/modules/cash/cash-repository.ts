@@ -673,19 +673,102 @@ export class KyselyCashRepository implements CashRepository {
   }
 
   async listSessions(tenantId: string, page: number, pageSize: number) {
-    const [ids, total] = await Promise.all([
-      this.database.selectFrom("cash_sessions").select("id")
-        .where("tenant_id", "=", tenantId).orderBy("opened_at", "desc").orderBy("id", "desc")
+    const [sessions, total] = await Promise.all([
+      this.database.selectFrom("cash_sessions as session")
+        .innerJoin("cash_registers as register", "register.id", "session.cash_register_id")
+        .innerJoin("users as opener", "opener.id", "session.opening_operator_id")
+        .leftJoin("users as closer", "closer.id", "session.closing_operator_id")
+        .select([
+          "session.id", "register.id as register_id", "register.code",
+          "register.name as register_name", "opener.id as opener_id", "opener.name as opener_name",
+          "session.opened_at", "session.opening_amount_cents", "session.status",
+          "closer.id as closer_id", "closer.name as closer_name", "session.closed_at",
+          "session.closing_note", "session.version",
+        ])
+        .where("session.tenant_id", "=", tenantId)
+        .orderBy("session.opened_at", "desc").orderBy("session.id", "desc")
         .limit(pageSize).offset((page - 1) * pageSize).execute(),
       this.database.selectFrom("cash_sessions")
         .select((expression) => expression.fn.countAll<string>().as("count"))
         .where("tenant_id", "=", tenantId).executeTakeFirstOrThrow(),
     ])
-    const data = await Promise.all(ids.map(async ({ id }) => {
-      const session = await this.getSession(tenantId, id)
-      if (!session) throw new Error("Cash session disappeared during listing")
-      return session
-    }))
+    if (sessions.length === 0) {
+      return { data: [], page, pageSize, total: Number(total.count) }
+    }
+
+    const sessionIds = sessions.map((session) => session.id)
+    const [movements, closeCounts] = await Promise.all([
+      this.database.selectFrom("cash_movements as movement")
+        .innerJoin("users as actor", "actor.id", "movement.actor_user_id")
+        .select([
+          "movement.cash_session_id", "movement.id", "movement.movement_type",
+          "movement.payment_method", "movement.amount_cents", "movement.reason",
+          "actor.id as actor_id", "actor.name as actor_name", "movement.occurred_at",
+          "movement.source_type", "movement.source_id",
+        ])
+        .where("movement.tenant_id", "=", tenantId)
+        .where("movement.cash_session_id", "in", sessionIds)
+        .orderBy("movement.occurred_at", "desc").orderBy("movement.id", "desc").execute(),
+      this.database.selectFrom("cash_close_counts").select([
+        "cash_session_id", "payment_method", "expected_amount_cents",
+        "counted_amount_cents", "difference_cents",
+      ]).where("tenant_id", "=", tenantId)
+        .where("cash_session_id", "in", sessionIds)
+        .orderBy("payment_method").execute(),
+    ])
+    const movementsBySession = new Map<string, typeof movements>()
+    for (const movement of movements) {
+      const current = movementsBySession.get(movement.cash_session_id) ?? []
+      current.push(movement)
+      movementsBySession.set(movement.cash_session_id, current)
+    }
+    const closeCountsBySession = new Map<string, typeof closeCounts>()
+    for (const count of closeCounts) {
+      const current = closeCountsBySession.get(count.cash_session_id) ?? []
+      current.push(count)
+      closeCountsBySession.set(count.cash_session_id, current)
+    }
+    const data = sessions.map((session): CashSession => {
+      const sessionMovements = movementsBySession.get(session.id) ?? []
+      const sessionCloseCounts = closeCountsBySession.get(session.id) ?? []
+      const expectedByMethod: Record<PaymentMethod, number> = {
+        cash: 0, credit: 0, debit: 0, pix: 0,
+      }
+      for (const movement of sessionMovements) {
+        expectedByMethod[movement.payment_method] += Number(movement.amount_cents)
+      }
+      return {
+        id: session.id,
+        register: { id: session.register_id, code: session.code, name: session.register_name },
+        openingOperator: { id: session.opener_id, name: session.opener_name },
+        openedAt: session.opened_at.toISOString(),
+        openingAmountCents: Number(session.opening_amount_cents),
+        status: session.status,
+        closingOperator: session.closer_id && session.closer_name
+          ? { id: session.closer_id, name: session.closer_name } : null,
+        closedAt: session.closed_at?.toISOString() ?? null,
+        closingNote: session.closing_note,
+        version: session.version,
+        expectedByMethod,
+        closeCounts: sessionCloseCounts.map((count) => ({
+          paymentMethod: count.payment_method,
+          expectedAmountCents: Number(count.expected_amount_cents),
+          countedAmountCents: Number(count.counted_amount_cents),
+          differenceCents: Number(count.difference_cents),
+        })),
+        movements: sessionMovements.map((movement) => ({
+          id: movement.id,
+          type: movement.movement_type,
+          paymentMethod: movement.payment_method,
+          amountCents: Number(movement.amount_cents),
+          reason: movement.reason,
+          actor: { id: movement.actor_id, name: movement.actor_name },
+          occurredAt: movement.occurred_at.toISOString(),
+          sourceType: movement.source_type,
+          sourceId: movement.source_id,
+        })),
+      }
+    })
     return { data, page, pageSize, total: Number(total.count) }
   }
 }

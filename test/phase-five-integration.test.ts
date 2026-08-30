@@ -58,7 +58,7 @@ void describe("Phase 5 PostgreSQL hardening integration", { skip: !runIntegratio
   }
 
   async function request(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH",
     url: string,
     token: string,
     payload?: Record<string, unknown>,
@@ -341,6 +341,47 @@ void describe("Phase 5 PostgreSQL hardening integration", { skip: !runIntegratio
       app.inject({ method: "GET", url: "/api/v1/health/live" })
     ))
     assert.equal(loadResponses.every((response) => response.statusCode === 200), true)
+  })
+
+  void it("allows only administrators to manage tenant AI availability", async () => {
+    const forbidden = await request(
+      "GET",
+      "/api/v1/intelligence/settings",
+      employeeToken,
+    )
+    assert.equal(forbidden.statusCode, 403)
+
+    const initial = await request(
+      "GET",
+      "/api/v1/intelligence/settings",
+      adminToken,
+    )
+    assert.equal(initial.statusCode, 200)
+    assert.deepEqual(initial.body, {
+      enabled: true,
+      provider: "gemini",
+      providerConfigured: true,
+    })
+
+    const disabled = await request(
+      "PATCH",
+      "/api/v1/intelligence/settings",
+      adminToken,
+      { enabled: false },
+      randomUUID(),
+    )
+    assert.equal(disabled.statusCode, 200)
+    assert.equal(disabled.body.enabled, false)
+
+    const restored = await request(
+      "PATCH",
+      "/api/v1/intelligence/settings",
+      adminToken,
+      { enabled: true },
+      randomUUID(),
+    )
+    assert.equal(restored.statusCode, 200)
+    assert.equal(restored.body.enabled, true)
   })
 
   void it("prevents duplicate sessions, overselling and concurrent idempotency replays", async () => {

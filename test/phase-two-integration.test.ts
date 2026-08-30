@@ -405,6 +405,7 @@ void describe("Phase 2 PostgreSQL integration", { skip: !runIntegration }, () =>
       color_token: "--color-success",
       display_position: 0,
       protected: true,
+      ready_for_sale: false,
       created_by: adminId,
       updated_by: adminId,
       archived_at: null,

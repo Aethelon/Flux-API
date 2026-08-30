@@ -23,6 +23,8 @@ import { screenAccessMigration } from "./021-screen-access.js"
 import { settingsScreenAccessMigration } from "./022-settings-screen-access.js"
 import { settingsAlwaysVisibleMigration } from "./023-settings-always-visible.js"
 import { protectTerminalColumnsMigration } from "./024-protect-terminal-columns.js"
+import { dampedForecastMigration } from "./025-damped-forecast.js"
+import { readyForSaleColumnMigration } from "./026-ready-for-sale-column.js"
 
 const migrations: Record<string, Migration> = {
   "001-foundation": foundationMigration,
@@ -49,6 +51,8 @@ const migrations: Record<string, Migration> = {
   "022-settings-screen-access": settingsScreenAccessMigration,
   "023-settings-always-visible": settingsAlwaysVisibleMigration,
   "024-protect-terminal-columns": protectTerminalColumnsMigration,
+  "025-damped-forecast": dampedForecastMigration,
+  "026-ready-for-sale-column": readyForSaleColumnMigration,
 }
 
 export const migrationProvider: MigrationProvider = {

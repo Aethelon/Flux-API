@@ -15,6 +15,7 @@ interface Column {
   semanticType: "open" | "completed" | "cancelled"
   displayPosition: number
   protected: boolean
+  readyForSale: boolean
   version: number
 }
 
@@ -101,7 +102,7 @@ void describe("Service-order column ordering", { skip: !runIntegration }, () => 
     )
   })
 
-  void it("protects completed and cancelled system columns from removal", async () => {
+  void it("protects ready, completed and cancelled system columns from removal", async () => {
     const list = await app.inject({
       method: "GET",
       url: "/api/v1/service-order-columns",
@@ -109,22 +110,26 @@ void describe("Service-order column ordering", { skip: !runIntegration }, () => 
     })
     assert.equal(list.statusCode, 200)
     const columns = list.json<Column[]>()
+    const ready = columns.find((column) => column.readyForSale)
     const completed = columns.find((column) => column.semanticType === "completed")
     const cancelled = columns.find((column) => column.semanticType === "cancelled")
+    assert.ok(ready)
     assert.ok(completed)
     assert.ok(cancelled)
+    assert.equal(ready.semanticType, "open")
+    assert.equal(ready.protected, true)
     assert.equal(completed.protected, true)
     assert.equal(cancelled.protected, true)
 
     const response = await app.inject({
       method: "POST",
-      url: `/api/v1/service-order-columns/${cancelled.id}/archive`,
+      url: `/api/v1/service-order-columns/${ready.id}/archive`,
       headers: {
         authorization: `Bearer ${adminToken}`,
         "idempotency-key": randomUUID(),
       },
       payload: {
-        version: cancelled.version,
+        version: ready.version,
         reason: "System column removal must be rejected.",
       },
     })

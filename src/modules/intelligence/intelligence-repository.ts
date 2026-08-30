@@ -17,6 +17,7 @@ import type {
   ForecastRun,
   Recommendation,
 } from "./types.js"
+import { brazilRetailEventsBetween, monthEnd } from "./retail-calendar.js"
 
 export interface IntelligenceCursor {
   createdAt: string
@@ -188,6 +189,7 @@ export class KyselyIntelligenceRepository implements IntelligenceRepository {
         "run.target_type",
         "run.product_id",
         "product.name as product_name",
+        "product.category_id as product_category_id",
         "run.method",
         "run.calculation_version",
         "run.training_from",
@@ -230,6 +232,37 @@ export class KyselyIntelligenceRepository implements IntelligenceRepository {
       ]).where("tenant_id", "=", tenantId)
         .where("forecast_run_id", "=", row.id)
         .orderBy("horizon").execute()
+      const periodStart = points[0]?.bucket_start
+      const periodEnd = points.at(-1)?.bucket_start
+        ? monthEnd(points.at(-1)?.bucket_start ?? "")
+        : undefined
+      let customEvents: Array<{
+        name: string
+        starts_on: string
+        ends_on: string
+        source: string
+      }> = []
+      if (periodStart && periodEnd) {
+        let eventQuery = this.database.selectFrom("business_calendar_events as event")
+          .select(["event.name", "event.starts_on", "event.ends_on", "event.source"])
+          .where("event.tenant_id", "=", tenantId)
+          .where("event.archived_at", "is", null)
+          .where("event.starts_on", "<=", periodEnd)
+          .where("event.ends_on", ">=", periodStart)
+        if (row.target_type === "product_demand" && row.product_id) {
+          eventQuery = eventQuery.where((expression) => expression.or([
+            expression.and([
+              expression("event.product_id", "is", null),
+              expression("event.category_id", "is", null),
+            ]),
+            expression("event.product_id", "=", row.product_id),
+            ...(row.product_category_id
+              ? [expression("event.category_id", "=", row.product_category_id)]
+              : []),
+          ]))
+        }
+        customEvents = await eventQuery.orderBy("event.starts_on").execute()
+      }
       return {
         id: row.id,
         targetType: row.target_type,
@@ -263,6 +296,30 @@ export class KyselyIntelligenceRepository implements IntelligenceRepository {
           seasonalFactor: point.seasonal_factor === null
             ? null : Number(point.seasonal_factor),
           operationalValue: Number(point.operational_value),
+          calendarEvents: [
+            ...brazilRetailEventsBetween(point.bucket_start, monthEnd(point.bucket_start))
+              .map((event) => ({
+                name: event.name,
+                kind: event.kind,
+                source: event.source,
+                startsOn: event.startsOn,
+                endsOn: event.endsOn,
+              })),
+            ...customEvents
+              .filter((event) =>
+                event.starts_on <= monthEnd(point.bucket_start)
+                && event.ends_on >= point.bucket_start
+              )
+              .map((event) => ({
+                name: event.name,
+                kind: "custom" as const,
+                source: event.source,
+                startsOn: event.starts_on,
+                endsOn: event.ends_on,
+              })),
+          ].filter((event, index, events) =>
+            events.findIndex((candidate) => candidate.name === event.name) === index
+          ),
         })),
       }
     }))

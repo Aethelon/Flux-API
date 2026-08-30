@@ -9,8 +9,10 @@ import { AppError } from "../../shared/errors/app-error.js"
 import {
   ANALYTICS_CALCULATION_VERSION,
   confidenceScore,
+  forecastDampedTrend,
   fitOls,
   forecastOls,
+  hasSufficientBacktestOrigins,
   rollingOriginBacktest,
   seasonalFactors,
 } from "./math.js"
@@ -27,6 +29,8 @@ interface StoredForecast {
   runId: string
   published: boolean
 }
+
+const PRODUCT_FORECAST_LIMIT = 20
 
 function monthAfter(value: string, count: number): string {
   const date = new Date(`${value}T00:00:00.000Z`)
@@ -128,11 +132,12 @@ async function productBuckets(
 
   return result.rows.map((row) => {
     const observedMinutes = Number(row.observed_minutes)
+    const availabilityUnobserved = observedMinutes === 0
     const stockoutRate = observedMinutes === 0
       ? 1
       : Number(row.stockout_minutes) / observedMinutes
-    const exclusionReason = observedMinutes === 0
-      ? "missing_inventory_observation"
+    const exclusionReason = availabilityUnobserved
+      ? "inventory_availability_unobserved"
       : !row.complete
         ? "incomplete_inventory_snapshot"
         : stockoutRate > settings.stockoutExclusionRate
@@ -141,7 +146,7 @@ async function productBuckets(
     return {
       bucketStart: row.bucket_start,
       value: Number(row.value),
-      eligible: exclusionReason === null,
+      eligible: availabilityUnobserved || exclusionReason === null,
       exclusionReason,
       observedMinutes,
       inStockMinutes: Number(row.in_stock_minutes),
@@ -269,17 +274,32 @@ async function persistForecast(
   const baselineBeaten = modelWape !== null
     && baselineWape !== null
     && modelWape <= baselineWape * (1 + input.settings.baselineTolerance)
-  const confidence = fit
+  const backtestOrigins = new Set(backtest?.points.map((point) => point.origin) ?? []).size
+  const baselineValidated = baselineBeaten && hasSufficientBacktestOrigins(backtest)
+  const trendReliability = baselineValidated
+    ? 1
+    : Math.min(1, backtestOrigins / 3)
+      * Math.max(0, Math.min(1, fit?.metrics.rSquared ?? 0))
+  const rawConfidence = fit
     ? confidenceScore({
         eligibleBucketCount: eligible.length,
         preferredBucketCount: input.settings.preferredBuckets,
         backtestWape: modelWape,
         availabilityScore,
-        baselineBeaten,
+        baselineBeaten: baselineValidated,
         weights: input.settings.confidenceWeights,
         thresholds: input.settings.confidenceThresholds,
       })
     : null
+  const confidence = rawConfidence && !baselineValidated
+    ? {
+        score: Math.min(
+          rawConfidence.score,
+          input.settings.confidenceThresholds.medium - 1,
+        ),
+        label: "low" as const,
+      }
+    : rawConfidence
   let method: ForecastMethod = "unavailable"
   const status: ForecastStatus = eligible.length < input.settings.minimumBuckets
     ? input.buckets.length >= input.settings.minimumBuckets
@@ -289,7 +309,7 @@ async function persistForecast(
       ? "completed"
       : "insufficient_data"
   const limitations = input.buckets
-    .filter((bucket) => !bucket.eligible)
+    .filter((bucket) => bucket.exclusionReason !== null)
     .map((bucket) => ({
       bucketStart: bucket.bucketStart,
       reason: bucket.exclusionReason,
@@ -303,10 +323,10 @@ async function persistForecast(
       )
     : { factors: [], enabled: false, reason: "forecast_unavailable" }
   if (fit) {
-    method = baselineBeaten
+    method = baselineValidated
       ? seasonal.enabled ? "seasonal_ols" : "ols_trend"
       : backtest && input.settings.baselinePolicy === "naive"
-        ? "naive_last_value"
+        ? "damped_trend"
         : "ols_trend"
     if (!baselineBeaten && backtest) {
       limitations.push({
@@ -315,7 +335,7 @@ async function persistForecast(
       })
     }
   }
-  const effectiveStatus = !baselineBeaten
+  const effectiveStatus = !baselineValidated
     && backtest
     && input.settings.baselinePolicy === "reject"
     ? "baseline_not_beaten"
@@ -387,6 +407,8 @@ async function persistForecast(
         ? {
             intercept: fit.intercept,
             slope: fit.slope,
+            trendReliability,
+            dampedSlope: fit.slope * trendReliability,
             ...fit.metrics,
             backtest: backtest?.model ?? null,
             backtestByHorizon: backtest?.byHorizon.map((item) => ({
@@ -409,6 +431,9 @@ async function persistForecast(
       status: effectiveStatus,
       limitations: sql`${JSON.stringify([
         ...limitations,
+        ...(backtest && backtestOrigins < 3
+          ? [{ reason: "insufficient_backtest_origins", available: backtestOrigins, required: 3 }]
+          : []),
         ...(seasonal.reason ? [{ reason: seasonal.reason }] : []),
       ])}::jsonb`,
       source_snapshot_ids: sql`${JSON.stringify([snapshot.id])}::jsonb`,
@@ -428,9 +453,15 @@ async function persistForecast(
               new Date(`${bucketStart}T00:00:00Z`).getUTCMonth()
             ] ?? 1
             : 1
-          const calculated = method === "naive_last_value"
-            ? { point: lastValue, lower: null, upper: null }
-            : forecastOls(fit, values.length, values.length + index, factor)
+          const calculated = method === "damped_trend"
+              ? forecastDampedTrend(
+                  fit,
+                  values.length,
+                  horizon,
+                  lastValue,
+                  trendReliability,
+                )
+              : forecastOls(fit, values.length, values.length + index, factor)
           return {
             tenant_id: input.tenantId,
             forecast_run_id: run.id,
@@ -474,10 +505,11 @@ export async function generateForecasts(
     actorId: string
     productId?: string
     includeRevenue: boolean
+    includeProducts?: boolean
   },
 ): Promise<{ count: number; publishedCount: number; runIds: string[] }> {
   const settings = await analyticsSettings(database, input.tenantId)
-  let productsQuery = database.selectFrom("products as product")
+  const baseProductsQuery = database.selectFrom("products as product")
     .innerJoin("units as unit", (join) => join
       .onRef("unit.id", "=", "product.unit_id")
       .onRef("unit.tenant_id", "=", "product.tenant_id"))
@@ -486,8 +518,24 @@ export async function generateForecasts(
     .where("product.active", "=", true)
     .where("product.archived_at", "is", null)
     .where("product.type", "<>", "service")
-  if (input.productId) productsQuery = productsQuery.where("product.id", "=", input.productId)
-  const products = await productsQuery.orderBy("product.id").execute()
+  const products = input.includeProducts === false
+    ? []
+    : input.productId
+      ? await baseProductsQuery.where("product.id", "=", input.productId)
+        .orderBy("product.id").execute()
+      : await baseProductsQuery
+        .innerJoin("sale_items as candidate_item", (join) => join
+          .onRef("candidate_item.product_id", "=", "product.id")
+          .onRef("candidate_item.tenant_id", "=", "product.tenant_id"))
+        .innerJoin("sales as candidate_sale", (join) => join
+          .onRef("candidate_sale.id", "=", "candidate_item.sale_id")
+          .onRef("candidate_sale.tenant_id", "=", "candidate_item.tenant_id"))
+        .where("candidate_sale.status", "<>", "cancelled")
+        .groupBy(["product.id", "product.name", "unit.quantity_scale"])
+        .orderBy(sql`SUM(candidate_item.quantity - candidate_item.returned_quantity)`, "desc")
+        .orderBy("product.id")
+        .limit(PRODUCT_FORECAST_LIMIT)
+        .execute()
   if (input.productId && products.length === 0) {
     throw new AppError(404, "PRODUCT_NOT_FOUND", "Product was not found.")
   }

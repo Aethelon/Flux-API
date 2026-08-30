@@ -3,10 +3,24 @@ import type { Kysely } from "kysely"
 import type { AppConfig } from "../../config/env.js"
 import type { Database } from "../../database/types.js"
 import { AppError } from "../../shared/errors/app-error.js"
+import {
+  recordDomainEvent,
+  replayedEntityId,
+  saveEntityIdempotency,
+} from "../../shared/persistence/commands.js"
 import type { AuthenticatedUser } from "../auth/types.js"
-import { buildSanitizedAiInput } from "./ai-input.js"
+import {
+  buildSanitizedAiInput,
+  publishAiReportSnapshot,
+} from "./ai-input.js"
 import type { AiCursor, AiRepository } from "./ai-repository.js"
-import type { AiInsight, AiInsightPage, AiJob } from "./types.js"
+import type {
+  AiInsight,
+  AiInsightPage,
+  AiJob,
+  AiReportPeriod,
+  AiSettings,
+} from "./types.js"
 import { inputHash } from "./validation.js"
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -61,9 +75,76 @@ export class AiService {
     private readonly config: AppConfig,
   ) {}
 
+  async getSettings(tenantId: string): Promise<AiSettings> {
+    const settings = await this.database.selectFrom("tenant_settings")
+      .select("ai_enabled")
+      .where("tenant_id", "=", tenantId)
+      .executeTakeFirstOrThrow()
+    return {
+      enabled: settings.ai_enabled,
+      provider: this.config.aiProvider,
+      providerConfigured: providerConfigured(this.config),
+    }
+  }
+
+  async updateSettings(
+    user: AuthenticatedUser,
+    input: { enabled: boolean },
+    idempotencyKey: string,
+  ): Promise<AiSettings> {
+    if (input.enabled && !providerConfigured(this.config)) {
+      throw new AppError(
+        409,
+        "AI_PROVIDER_NOT_CONFIGURED",
+        "Configure an AI provider on the server before enabling AI insights.",
+      )
+    }
+    const route = "PATCH /api/v1/intelligence/settings"
+    const requestHash = hash(input)
+    await this.database.transaction().execute(async (transaction) => {
+      const replay = await replayedEntityId(
+        transaction,
+        user,
+        route,
+        idempotencyKey,
+        requestHash,
+      )
+      if (replay) return
+      const current = await transaction.selectFrom("tenant_settings")
+        .select("ai_enabled")
+        .where("tenant_id", "=", user.tenantId)
+        .forUpdate()
+        .executeTakeFirstOrThrow()
+      if (current.ai_enabled !== input.enabled) {
+        await transaction.updateTable("tenant_settings")
+          .set({ ai_enabled: input.enabled, updated_at: new Date() })
+          .where("tenant_id", "=", user.tenantId)
+          .executeTakeFirstOrThrow()
+        await recordDomainEvent(transaction, user, {
+          action: "tenant.ai_settings_updated",
+          entityType: "tenant_settings",
+          entityId: user.tenantId,
+          before: { enabled: current.ai_enabled },
+          after: { enabled: input.enabled },
+        })
+      }
+      await saveEntityIdempotency(
+        transaction,
+        user,
+        route,
+        idempotencyKey,
+        requestHash,
+        user.tenantId,
+        200,
+      )
+    })
+    return this.getSettings(user.tenantId)
+  }
+
   async createRun(
     user: AuthenticatedUser,
     idempotencyKey: string,
+    reportPeriod: AiReportPeriod = "monthly",
   ): Promise<AiJob> {
     const provider = this.config.aiProvider
     if (provider === "disabled" || !providerConfigured(this.config)) {
@@ -75,7 +156,16 @@ export class AiService {
     if (!settings.ai_enabled) {
       throw new AppError(503, "AI_DISABLED", "AI insights are not enabled.")
     }
-    const input = await buildSanitizedAiInput(this.database, user.tenantId)
+    await publishAiReportSnapshot(
+      this.database,
+      user.tenantId,
+      reportPeriod,
+    )
+    const input = await buildSanitizedAiInput(
+      this.database,
+      user.tenantId,
+      reportPeriod,
+    )
     if (input.metrics.length === 0) {
       throw new AppError(
         409,

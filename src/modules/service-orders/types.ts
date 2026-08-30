@@ -7,6 +7,7 @@ export interface ServiceOrderColumn {
   colorToken: string
   displayPosition: number
   protected: boolean
+  readyForSale: boolean
   version: number
 }
 

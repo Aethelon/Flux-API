@@ -55,6 +55,13 @@ export interface ForecastPoint {
   upperLimit: number | null
   seasonalFactor: number | null
   operationalValue: number
+  calendarEvents: Array<{
+    name: string
+    kind: "season" | "retail" | "holiday" | "custom"
+    source: string
+    startsOn: string
+    endsOn: string
+  }>
 }
 
 export interface ForecastRun {

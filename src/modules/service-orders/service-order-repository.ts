@@ -82,11 +82,12 @@ export interface ServiceOrderRepository {
 }
 
 const defaults = [
-  { label: "Pendente", semanticType: "open", colorToken: "--color-warning", position: 0 },
-  { label: "Em Andamento", semanticType: "open", colorToken: "--color-accent", position: 1 },
-  { label: "Aguardando Peças", semanticType: "open", colorToken: "--color-info", position: 2 },
-  { label: "Concluído", semanticType: "completed", colorToken: "--color-success", position: 3 },
-  { label: "Cancelado", semanticType: "cancelled", colorToken: "--color-danger", position: 4 },
+  { label: "Pendente", semanticType: "open", colorToken: "--color-warning", position: 0, readyForSale: false },
+  { label: "Em Andamento", semanticType: "open", colorToken: "--color-accent", position: 1, readyForSale: false },
+  { label: "Aguardando Peças", semanticType: "open", colorToken: "--color-info", position: 2, readyForSale: false },
+  { label: "Pronto", semanticType: "open", colorToken: "--color-info", position: 3, readyForSale: true },
+  { label: "Entregue", semanticType: "completed", colorToken: "--color-success", position: 4, readyForSale: false },
+  { label: "Cancelado", semanticType: "cancelled", colorToken: "--color-danger", position: 5, readyForSale: false },
 ] as const
 
 async function ensureDefaultColumns(
@@ -107,7 +108,8 @@ async function ensureDefaultColumns(
     semantic_type: column.semanticType,
     color_token: column.colorToken,
     display_position: column.position,
-    protected: column.semanticType !== "open",
+    protected: column.semanticType !== "open" || column.readyForSale,
+    ready_for_sale: column.readyForSale,
     created_by: user.id,
     updated_by: user.id,
     archived_at: null,
@@ -121,6 +123,7 @@ function mapColumn(row: {
   color_token: string
   display_position: number
   protected: boolean
+  ready_for_sale: boolean
   version: number
 }): ServiceOrderColumn {
   return {
@@ -130,6 +133,7 @@ function mapColumn(row: {
     colorToken: row.color_token,
     displayPosition: row.display_position,
     protected: row.protected,
+    readyForSale: row.ready_for_sale,
     version: row.version,
   }
 }
@@ -138,6 +142,7 @@ function columnSelection() {
   return [
     "id", "label", "semantic_type", "color_token", "display_position",
     "protected", "version",
+    "ready_for_sale",
   ] as const
 }
 
@@ -182,6 +187,7 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
         color_token: values.colorToken,
         display_position: values.displayPosition,
         protected: false,
+        ready_for_sale: false,
         created_by: user.id,
         updated_by: user.id,
         archived_at: null,
@@ -385,7 +391,8 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
         "service_order.updated_at", "responsible.id as responsible_id",
         "responsible.name as responsible_name", "column.id as column_id",
         "column.label as column_label", "column.semantic_type", "column.color_token",
-        "column.display_position", "column.protected", "column.version as column_version",
+        "column.display_position", "column.protected", "column.ready_for_sale",
+        "column.version as column_version",
       ]).where("service_order.tenant_id", "=", tenantId)
       .where("service_order.id", "=", id).executeTakeFirst()
     if (!row) return null
@@ -416,6 +423,7 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
         colorToken: row.color_token,
         displayPosition: row.display_position,
         protected: row.protected,
+        readyForSale: row.ready_for_sale,
         version: row.column_version,
       },
       status: row.current_status,
@@ -610,15 +618,23 @@ export class KyselyServiceOrderRepository implements ServiceOrderRepository {
         throw new AppError(409, "SAME_SERVICE_ORDER_COLUMN", "Service order is already in this column.")
       }
       const target = await transaction.selectFrom("service_order_columns")
-        .select(["id", "semantic_type"]).where("tenant_id", "=", user.tenantId)
+        .select(["id", "semantic_type"])
+        .where("tenant_id", "=", user.tenantId)
         .where("id", "=", input.columnId).where("archived_at", "is", null)
         .executeTakeFirst()
       if (!target) throw new AppError(404, "COLUMN_NOT_FOUND", "Column was not found.")
+      if (target.semantic_type === "completed") {
+        throw new AppError(
+          409,
+          "DELIVERY_REQUIRES_SALE",
+          "A service order can only be delivered by completing its sale.",
+        )
+      }
       const occurredAt = new Date()
       await transaction.updateTable("service_orders").set({
         current_column_id: target.id,
         current_status: target.semantic_type,
-        completed_at: target.semantic_type === "completed" ? occurredAt : null,
+        completed_at: null,
         cancelled_at: target.semantic_type === "cancelled" ? occurredAt : null,
         updated_by: user.id,
         updated_at: occurredAt,

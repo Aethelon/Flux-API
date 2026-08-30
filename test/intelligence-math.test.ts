@@ -4,7 +4,9 @@ import {
   confidenceScore,
   errorMetrics,
   fitOls,
+  forecastDampedTrend,
   forecastOls,
+  hasSufficientBacktestOrigins,
   promotion,
   replenishment,
   rollingOriginBacktest,
@@ -30,6 +32,16 @@ void describe("deterministic intelligence mathematics", () => {
       point: 10,
       lower: 10,
       upper: 10,
+    })
+  })
+
+  void it("continues a short history with a reliability-damped trend", () => {
+    const fit = fitOls([2, 4, 6, 8])
+    assert.ok(fit)
+    assert.deepEqual(forecastDampedTrend(fit, 4, 2, 8, 0.25), {
+      point: 9,
+      lower: 9,
+      upper: 9,
     })
   })
 
@@ -65,6 +77,19 @@ void describe("deterministic intelligence mathematics", () => {
     assert.equal(result.points.length, 5)
     assert.deepEqual(result.byHorizon.map((item) => item.horizon), [1, 2])
     assert.ok((result.model.wape ?? 1) < (result.baseline.wape ?? 0))
+  })
+
+  void it("requires multiple backtest origins before trusting a trend", () => {
+    assert.equal(
+      hasSufficientBacktestOrigins(rollingOriginBacktest([10, 20, 15, 25], 3, 1)),
+      false,
+    )
+    assert.equal(
+      hasSufficientBacktestOrigins(
+        rollingOriginBacktest([10, 20, 15, 25, 18, 28], 3, 1),
+      ),
+      true,
+    )
   })
 
   void it("calculates transparent confidence labels", () => {

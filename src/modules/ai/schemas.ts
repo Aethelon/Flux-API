@@ -36,6 +36,13 @@ export const AiJobSchema = Type.Object({
   finishedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
 })
 
+export const CreateAiInsightRunBodySchema = Type.Object({
+  period: Type.Optional(Type.Union([
+    Type.Literal("monthly"),
+    Type.Literal("quarterly"),
+  ])),
+}, { additionalProperties: false })
+
 export const AiInsightSchema = Type.Object({
   id: Type.String({ format: "uuid" }),
   runId: Type.String({ format: "uuid" }),
@@ -47,6 +54,10 @@ export const AiInsightSchema = Type.Object({
     Type.Literal("rejected"),
     Type.Literal("failed"),
     Type.Literal("budget_exceeded"),
+  ]),
+  reportPeriod: Type.Union([
+    Type.Literal("monthly"),
+    Type.Literal("quarterly"),
   ]),
   provider: Type.Union([
     Type.Literal("gemini"),
@@ -113,4 +124,18 @@ export const ReviewAiInsightBodySchema = Type.Object({
     Type.Literal("rejected"),
   ]),
   reason: Type.String({ minLength: 3, maxLength: 500 }),
+}, { additionalProperties: false })
+
+export const AiSettingsSchema = Type.Object({
+  enabled: Type.Boolean(),
+  provider: Type.Union([
+    Type.Literal("disabled"),
+    Type.Literal("gemini"),
+    Type.Literal("anthropic"),
+  ]),
+  providerConfigured: Type.Boolean(),
+})
+
+export const UpdateAiSettingsBodySchema = Type.Object({
+  enabled: Type.Boolean(),
 }, { additionalProperties: false })

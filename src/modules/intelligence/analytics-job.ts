@@ -63,6 +63,7 @@ async function processJob(
       actorId: job.requested_by,
       ...(typeof input.productId === "string" ? { productId: input.productId } : {}),
       includeRevenue: input.includeRevenue === true,
+      includeProducts: input.includeProducts !== false,
     })
     return { count: result.count, result }
   }

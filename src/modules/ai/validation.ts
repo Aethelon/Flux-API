@@ -149,7 +149,15 @@ function unsupportedNumericClaims(
   ]
   const unsupported = new Set<string>()
   for (const text of texts) {
-    for (const match of text.match(/[-+]?\d(?:[\d.,]*\d)?(?:\s*%)?/g) ?? []) {
+    for (const match of text.match(/\b\d{4}-\d{2}(?:-\d{2})?\b|[-+]?\d(?:[\d.,]*\d)?(?:\s*%)?/g) ?? []) {
+      const date = match.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/)
+      if (date) {
+        const supported = date.slice(1).filter(Boolean).every((part) =>
+          allowed.some((allowedValue) => Math.abs(allowedValue - Number(part)) <= 1e-6)
+        )
+        if (!supported) unsupported.add(match)
+        continue
+      }
       const claim = parsedClaim(match)
       if (!claim) continue
       const comparable = claim.percent

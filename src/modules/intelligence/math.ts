@@ -46,6 +46,13 @@ export interface BacktestResult {
   }>
 }
 
+export function hasSufficientBacktestOrigins(
+  result: BacktestResult | null,
+  minimumOrigins = 3,
+): boolean {
+  return new Set(result?.points.map((point) => point.origin) ?? []).size >= minimumOrigins
+}
+
 export interface ReplenishmentInput {
   dailyDemand: number[]
   onHand: number
@@ -226,6 +233,24 @@ export function forecastOls(
     point: trend * seasonalFactor,
     lower: Math.max(0, trend - margin) * seasonalFactor,
     upper: Math.max(0, trend + margin) * seasonalFactor,
+  }
+}
+
+export function forecastDampedTrend(
+  fit: RegressionFit,
+  trainingSize: number,
+  horizon: number,
+  lastValue: number,
+  reliability: number,
+): ForecastValue {
+  const boundedReliability = Math.max(0, Math.min(1, reliability))
+  const point = Math.max(0, lastValue + (fit.slope * boundedReliability * horizon))
+  const ols = forecastOls(fit, trainingSize, trainingSize + horizon - 1)
+  const margin = Math.max(0, (ols.upper - ols.lower) / 2)
+  return {
+    point,
+    lower: Math.max(0, point - margin),
+    upper: point + margin,
   }
 }
 

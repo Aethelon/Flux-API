@@ -13,6 +13,7 @@ const input: SanitizedAiInput = {
     businessType: "retail_and_production",
     timezone: "America/Recife",
     currency: "BRL",
+    reportPeriod: "quarterly",
   },
   generatedAt: "2026-07-25T12:00:00.000Z",
   metrics: [{
@@ -86,6 +87,11 @@ void describe("AI providers", () => {
       (JSON.parse(contents[0]?.parts[0]?.text ?? "{}") as SanitizedAiInput)
         .metrics[0]?.id,
       "M1",
+    )
+    assert.equal(
+      (JSON.parse(contents[0]?.parts[0]?.text ?? "{}") as SanitizedAiInput)
+        .context.reportPeriod,
+      "quarterly",
     )
     assert.equal(JSON.stringify(textFormat.schema).includes('"enum":["metric"]'), false)
     assert.equal("temperature" in generationConfig, false)

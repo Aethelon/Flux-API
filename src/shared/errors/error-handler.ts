@@ -27,6 +27,7 @@ const messages: Record<string, string> = {
   IDEMPOTENCY_RESULT_UNAVAILABLE: "O resultado da solicitação anterior não está disponível.",
   COLUMN_REORDER_CONFLICT: "As colunas foram alteradas. Atualize o quadro e tente novamente.",
   SERVICE_ORDER_ALREADY_BILLED: "Esta ordem já foi vendida e não pode ser alterada.",
+  DELIVERY_REQUIRES_SALE: "A ordem só pode ser entregue ao concluir a venda na Frente de Caixa.",
 }
 
 function publicMessage(code: string): string {

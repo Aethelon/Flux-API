@@ -54,13 +54,14 @@ export class IntelligenceService {
 
   createForecastRun(
     user: AuthenticatedUser,
-    input: { productId?: string; includeRevenue?: boolean },
+    input: { productId?: string; includeRevenue?: boolean; includeProducts?: boolean },
     idempotencyKey: string,
   ): Promise<AnalyticsJob> {
     const normalized = {
       runType: "forecasts",
       ...(input.productId ? { productId: input.productId } : {}),
       includeRevenue: input.includeRevenue ?? input.productId === undefined,
+      includeProducts: input.productId ? true : input.includeProducts ?? true,
     }
     return this.repository.createJob(
       user,
