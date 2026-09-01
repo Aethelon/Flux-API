@@ -17,7 +17,7 @@ interface JsonResponse {
 }
 
 function relativeMonthDate(monthOffset: number, day: number, hour: number): Date {
-  const now = new Date()
+  const now = new Date("2026-08-01T00:00:00.000Z")
   return new Date(Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth() + monthOffset,

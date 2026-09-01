@@ -273,6 +273,7 @@ void describe("Phase 4 PostgreSQL integration", { skip: !runIntegration }, () =>
       "input_tokens",
       "output_tokens",
     ]).where("tenant_id", "=", tenantId)
+      .where("job_run_id", "=", String(created.body.id))
       .where("status", "=", "completed").executeTakeFirstOrThrow()
     const serializedInput = JSON.stringify(persisted.sanitized_input)
     assert.equal(serializedInput.includes("privateRawInput"), false)
