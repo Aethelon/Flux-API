@@ -16,16 +16,6 @@ interface JsonResponse {
   body: Record<string, unknown>
 }
 
-function relativeMonthDate(monthOffset: number, day: number, hour: number): Date {
-  const now = new Date("2026-08-01T00:00:00.000Z")
-  return new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth() + monthOffset,
-    day,
-    hour,
-  ))
-}
-
 void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () => {
   let app: FastifyInstance
   let adminToken: string
@@ -76,9 +66,10 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
       archived_at: null,
     }).returning("id").executeTakeFirstOrThrow()
     tenantId = tenant.id
+    const timezone = "America/Recife"
     await app.db.insertInto("tenant_settings").values({
       tenant_id: tenantId,
-      timezone: "America/Recife",
+      timezone,
       currency: "BRL",
       forecast_horizon: 3,
       forecast_minimum_buckets: 3,
@@ -234,6 +225,15 @@ void describe("Phase 3 PostgreSQL integration", { skip: !runIntegration }, () =>
       updated_by: adminId,
       archived_at: null,
     }).returning("id").executeTakeFirstOrThrow()
+    // Align the six completed months with the forecast's PostgreSQL calendar.
+    const { monthStart } = await app.db.selectNoFrom(
+      sql<string>`to_char(now() AT TIME ZONE ${timezone}, 'YYYY-MM-01')`.as("monthStart"),
+    ).executeTakeFirstOrThrow()
+    const anchor = new Date(`${monthStart}T00:00:00Z`)
+    function relativeMonthDate(monthOffset: number, day: number, hour: number): Date {
+      return new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + monthOffset, day, hour))
+    }
+
     const cashSession = await app.db.insertInto("cash_sessions").values({
       tenant_id: tenantId,
       cash_register_id: register.id,
