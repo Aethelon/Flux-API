@@ -434,3 +434,17 @@ from being confused with delivered behavior. Known planned items include:
 
 See [docs/implementation-status.md](./docs/implementation-status.md) for the verified
 details.
+
+## Project team
+
+| Student | GitHub |
+| --- | --- |
+| Bruno Magno | [@brunoliratm](https://github.com/brunoliratm) |
+| Leandro Oliveira | [@leandrouser](https://github.com/leandrouser) |
+| Marcelo Guilherme Mesquita | [@MrMesquita](https://github.com/MrMesquita) |
+| Paulo de Araújo | [@Paulo-Araujo-Jr](https://github.com/Paulo-Araujo-Jr) |
+
+The Aethelon team developed Flux as part of the *Fábrica de Software* project
+in the Information Systems bachelor's program at Centro Universitário FACOL (UNIFACOL).
+
+Information Systems program coordination: [coord.si@unifacol.edu.br](mailto:coord.si@unifacol.edu.br).
